@@ -1,0 +1,43 @@
+######################################################################
+# OSCP ENUMERATION METHODOLOGY
+######################################################################
+
+1. Identify open ports
+   - Full TCP scan
+   - Quick scan
+   - UDP top 100
+
+2. Investigate each open port
+   - Service detection with scripts
+   - Banner grabbing
+
+3. SMB Enumeration
+   - Anonymous listing
+   - User enumeration
+   - Shares enumeration
+   - Credential validation
+
+4. LDAP Enumeration
+   - Detect baseDN
+   - Users / Groups / Policies dump
+
+5. RPC Enumeration
+   - Null session → list users/groups
+
+6. Kerberos Enumeration
+   - Kerbrute username check
+   - SPN discovery
+
+7. Web Enumeration
+   - Directory fuzzing
+   - Tech fingerprint
+   - Manual tests for SQLi, LFI, upload RCE
+
+8. MSSQL Enumeration
+   - Login attempts
+   - xp_cmdshell
+
+9. Note EVERYTHING
+   - Version numbers
+   - Credentials found
+   - Weak settings

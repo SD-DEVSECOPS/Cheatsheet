@@ -1,0 +1,35 @@
+######################################################################
+# ACTIVE DIRECTORY ATTACK METHODOLOGY
+######################################################################
+
+1. Enumerate domain info
+   - ldapsearch
+   - NetExec LDAP
+   - rpcclient users/groups
+
+2. Kerberos enumeration
+   - GetUserSPNs (Kerberoasting)
+   - GetNPUsers (AS-REP roast)
+   - Kerbrute (user discovery)
+
+3. Credential testing
+   - smb
+   - winrm
+   - ldap
+   - wmi
+
+4. Lateral movement
+   - Pass-the-hash
+   - Pass-the-ticket
+   - Impacket shells (wmiexec, psexec)
+
+5. Privilege escalation to Domain Admin
+   - DCSync
+   - Unconstrained delegation
+   - Resource-Based Constrained Delegation
+   - AD CS Escalation (ESC1–ESC8)
+   - Shadow credentials
+
+6. Bloodhound
+   - find misconfigurations
+   - shortest path to DA

@@ -1,0 +1,38 @@
+######################################################################
+# PRIVILEGE ESCALATION METHODOLOGY (LINUX + WINDOWS)
+######################################################################
+
+1. OS Enumeration
+   - version, kernel, patches
+
+2. User enumeration
+   - whoami /all (Windows)
+   - id (Linux)
+
+3. Services and tasks
+   - sc query (Windows)
+   - cron jobs (Linux)
+
+4. File system checks
+   - writable directories
+   - SUID binaries (Linux)
+   - sensitive files
+
+5. Weak permissions
+   - Unquoted service paths
+   - Modifiable service binPath
+   - AlwaysInstallElevated
+   - DLL hijacks
+
+6. Capabilities & SUID exploitation (Linux)
+   - getcap
+   - GTFOBins
+
+7. Credential hunting
+   - history files
+   - config files
+   - registry (Windows)
+
+8. Automated helpers
+   - winPEAS
+   - linPEAS

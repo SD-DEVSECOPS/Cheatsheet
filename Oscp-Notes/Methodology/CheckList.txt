@@ -1,0 +1,88 @@
+######################################################################
+# 14 – OSCP CHECKLISTS (FAST EXAM REFERENCE)
+######################################################################
+
+===========================================================
+# 1. LINUX PRIVESC CHECKLIST
+===========================================================
+
+[ ] sudo -l  
+[ ] SUID binaries (find / -perm -4000)  
+[ ] Writable /etc/passwd  
+[ ] Cron jobs  
+[ ] PATH hijack  
+[ ] Capabilities (getcap -r /)  
+[ ] SSH keys in /home  
+[ ] NFS no_root_squash  
+[ ] Docker root escape  
+[ ] Kernel exploits (CHECK ONLY, DO NOT USE IN OSCP)  
+
+===========================================================
+# 2. WINDOWS PRIVESC CHECKLIST
+===========================================================
+
+[ ] whoami /priv → SeImpersonatePrivilege  
+[ ] Unquoted service paths  
+[ ] Weak service perms (accesschk64)  
+[ ] AlwaysInstallElevated  
+[ ] Registry passwords  
+[ ] SAM & SYSTEM extraction  
+[ ] Passwords in config files  
+[ ] Scheduled tasks  
+[ ] DLL hijacking  
+
+===========================================================
+# 3. WEB TESTING CHECKLIST
+===========================================================
+
+[ ] Directory brute force  
+[ ] Parameters fuzzing  
+[ ] SQLi tests  
+[ ] LFI / RFI  
+[ ] File upload  
+[ ] Command injection  
+[ ] SSTI  
+[ ] Cookies manipulation  
+[ ] Misconfigured auth  
+[ ] Public exploits  
+
+===========================================================
+# 4. ACTIVE DIRECTORY CHECKLIST
+===========================================================
+
+[ ] Enumerate with crackmapexec/netexec  
+[ ] kerbrute userenum  
+[ ] AS-REP roasting  
+[ ] Kerberoasting  
+[ ] Password spray  
+[ ] WinRM availability  
+[ ] Shares enumeration  
+[ ] BloodHound graph  
+[ ] AD CS (Certipy)  
+[ ] RBCD check  
+
+===========================================================
+# 5. POST EXPLOITATION CHECKLIST
+===========================================================
+
+[ ] Proof.txt collected  
+[ ] User flag collected  
+[ ] Network info  
+[ ] Reused passwords  
+[ ] Cred harvesting  
+[ ] AV/EDR presence  
+[ ] Internal IP ranges discovered  
+
+===========================================================
+# 6. REPORTING CHECKLIST
+===========================================================
+
+[ ] Executive summary  
+[ ] Machine-by-machine walkthrough  
+[ ] Screenshots included  
+[ ] Commands documented  
+[ ] Remediation provided  
+
+######################################################################
+# END OF 14_CHECKLISTS.TXT
+######################################################################

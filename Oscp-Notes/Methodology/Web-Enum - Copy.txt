@@ -1,0 +1,43 @@
+######################################################################
+# OSCP WEB ATTACK METHODOLOGY
+######################################################################
+
+1. Discover directories
+   - gobuster
+   - feroxbuster
+
+2. Inspect pages manually
+   - parameters
+   - cookies
+   - forms
+   - file uploads
+
+3. SQL Injection
+   - manual boolean tests
+   - union-based extraction
+
+4. Command injection
+   - ; id, && whoami, | uname
+
+5. File Upload → RCE
+   - bypass extension filtering
+   - webshell upload
+   - MIME bypass
+
+6. LFI → RCE
+   - traversal
+   - php filter wrapper
+   - log poisoning
+
+7. Authentication attacks
+   - hydra POST brute forcing
+   - default credentials
+
+8. Wordlist creation
+   - cewl
+   - crunch
+
+9. Check for:
+   - SSTI
+   - insecure cookies
+   - exposed backups
