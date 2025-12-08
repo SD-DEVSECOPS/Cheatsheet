@@ -25,6 +25,16 @@ w
 cat /etc/crontab
 ls -la /etc/cron*
 
+# Search for passwords in config files
+grep -Ri "password" /etc 2>/dev/null
+grep -Ri "pass" /home 2>/dev/null
+
+# Look for SSH keys
+find / -name "id_rsa" 2>/dev/null
+
+# History
+cat ~/.bash_history
+
 
 ======================================================================
 # 2. SUID ENUMERATION
@@ -185,3 +195,4 @@ chmod +x /tmp/linpeas.sh
 ######################################################################
 # END OF LINUX PRIVESC (COMPLETE + POST-EXPLOIT)
 ######################################################################
+
