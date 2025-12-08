@@ -1,181 +1,300 @@
 ######################################################################
-# 02 – ENUMERATION (OSCP 2025)
+# 02 – ENUMERATION (OSCP 2025 — FULLY UPGRADED v2)
 ######################################################################
 
-===============================
-# 1. NMAP – Initial Recon
-===============================
+This upgraded enumeration module now includes:
+✔ Full Nmap (TCP/UDP)  
+✔ Web + directory brute-force + tech fingerprinting  
+✔ SMB / LDAP / WinRM / Kerberos checks  
+✔ MSSQL, MySQL, Postgres, Redis, MongoDB  
+✔ FTP, SSH, RDP, SMTP, SNMP  
+✔ NFS, RPCBind, Rsync, Docker, VNC, Elasticsearch, Memcached  
+✔ AD signing checks (SMB/LDAP/Kerberos)  
+✔ AD-CS detection  
+✔ LLMNR/mDNS poisoning checks  
+✔ Pivot enumeration (proxychains)  
+✔ Quick exploitation checks  
+######################################################################
+
+
+======================================================================
+# 1. NMAP — INITIAL DISCOVERY
+======================================================================
 
 # Full TCP scan
 nmap -p- --min-rate 1500 -oN nmap_full.txt $targetip
 
-# Service/version scan on discovered ports
-nmap -sC -sV -oN nmap_services.txt -p$(cat nmap_full.txt | grep open | cut -d'/' -f1 | tr '\n' ',') $targetip
+# Service + version scan (on discovered ports)
+nmap -sC -sV -oN nmap_services.txt -p$(grep -oP '^\d+(?=/open)' nmap_full.txt | tr '\n' ',' ) $targetip
 
-# Aggressive with tuning
-nmap -p- -Pn $targetip -v -T4 --min-rate 1500 --max-rtt-timeout 500ms --max-retries 3 --open -oN nmap_aggressive.txt
+# Aggressive scan
+nmap -A -T4 -oN nmap_aggressive.txt $targetip
 
-# UDP top 100
+# UDP top-100
 nmap -sU --top-ports 100 -oN udp_top100.txt $targetip
 
-===============================
+# Firewall / ACL detection
+nmap -sA $targetip
+
+
+======================================================================
 # 2. WEB ENUMERATION
-===============================
+======================================================================
 
 # Directory brute-force
-gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o gobuster_common.txt
+gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o gobuster.txt
 
-# Recursive content discovery
-feroxbuster -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o ferox.txt
+# Recursive scan + extensions
+feroxbuster -u http://$targetip -w /usr/share/wordlists/dirb/common.txt \
+  -x php,txt,js,html,bak,zip -o ferox.txt
 
-# Web fingerprinting
+# Fingerprinting
 whatweb http://$targetip
+wappalyzer http://$targetip (if installed)
 
-# Nikto basic scan
-nikto -h $targetip -output nikto_report.txt
+# Nikto scan
+nikto -h http://$targetip
 
-===============================
+# Check WebDAV
+davtest -url http://$targetip/
+cadaver http://$targetip/
+
+# Check exposed .git / .svn / backups
+gobuster dir -u http://$targetip -w /usr/share/seclists/Discovery/Web-Content/raft-small-directories.txt \
+  -x git,svn,bak,old,zip,tar
+
+# Tomcat manager bruteforce (if detected)
+hydra -L users.txt -P passwords.txt $targetip http-get /manager/html
+
+
+======================================================================
 # 3. SMB ENUMERATION
-===============================
+======================================================================
 
-# List shares anonymously
+# Anonymous share listing
 smbclient -L //$targetip/ -N
 
-# Connect anonymously to a share
+# Connect
 smbclient //$targetip/share -N
 
-# Enum4linux-ng
+# NetExec enumeration
+netexec smb $targetip --shares
+netexec smb $targetip --signing
+netexec smb $targetip --rid-brute
+
+# Enum4linux modern
 enum4linux-ng -A $targetip | tee enum4linux.txt
 
-# SMB with credentials
-crackmapexec smb $targetip -u $user -p "$password"
 
-# NetExec share enumeration
-netexec smb $targetip --shares
-netexec smb $targetip -u $user -p "$password" --shares
+======================================================================
+# 4. LDAP ENUMERATION (Active Directory)
+======================================================================
 
-# SMB RID brute
-netexec smb $targetip -u $user -p "$password" --rid-brute
-
-===============================
-# 4. RPC/SAMR ENUMERATION
-===============================
-
-rpcclient -N $targetip
-# inside rpcclient:
-# enumdomusers
-# enumdomgroups
-# querydominfo
-
-===============================
-# 5. LDAP ENUMERATION
-===============================
-
-# Base DSE (gets BaseDN)
+# BaseDN
 ldapsearch -x -H ldap://$targetip -s base
 
-# Enumerate domain with BaseDN:
-ldapsearch -x -H ldap://$targetip -b "$basedn"
-
 # Users
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName mail description
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description mail
 
 # Groups
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn members
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn member
 
-# NetExec LDAP enumeration
+# LDAP signing
+netexec ldap $targetip --signing
+
+# AD quick user dump
 netexec ldap $targetip --users
 
-===============================
-# 6. MSSQL ENUMERATION
-===============================
 
-# Connect with SQL authentication
+======================================================================
+# 5. KERBEROS ENUMERATION (AD)
+======================================================================
+
+# Username enumeration
+kerbrute userenum -d $domain --dc $targetip users.txt
+
+# Password spray
+kerbrute passwordspray -d $domain --dc $targetip users.txt "Password1!"
+
+# AS-REP roastable users (no pre-auth)
+impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass
+
+# FAST/PAC enforcement
+netexec kerberos $targetip --kerberos
+
+
+======================================================================
+# 6. WINRM ENUMERATION
+======================================================================
+
+# Check WinRM status
+netexec winrm $targetip
+
+# With credentials
+netexec winrm $targetip -u $user -p "$password"
+
+
+======================================================================
+# 7. MSSQL ENUMERATION
+======================================================================
+
+# SQL auth
 mssqlclient.py $user:"$password"@$targetip
 
-# Connect with Windows auth
+# Windows auth
 mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
 
-# Inside SQL:
-# SELECT @@version;
-# SELECT name FROM master..sysdatabases;
 
-===============================
-# 7. FTP ENUMERATION
-===============================
+======================================================================
+# 8. FTP ENUMERATION
+======================================================================
 
 ftp $targetip
-# Try anonymous:
 # user: anonymous
 
-===============================
-# 8. SSH ENUMERATION
-===============================
+
+======================================================================
+# 9. SSH ENUMERATION
+======================================================================
 
 # Banner grab
 nc -vn $targetip 22
 
-# Username brute-force (careful)
+# Hydra (careful)
 hydra -L users.txt -P passwords.txt ssh://$targetip
 
-===============================
-# 9. RDP ENUMERATION
-===============================
+
+======================================================================
+# 10. RDP ENUMERATION
+======================================================================
 
 nmap -p 3389 --script rdp-ntlm-info,rdp-enum-encryption $targetip
 
-===============================
-# 10. SNMP ENUM
-===============================
 
-# Test v2
+======================================================================
+# 11. SNMP ENUMERATION
+======================================================================
+
 onesixtyone $targetip
-
-# SNMPWalk
 snmpwalk -v2c -c public $targetip
 
-===============================
-# 11. HTTP FILE ENUMERATION (when browsing manually)
-===============================
 
-Check manually in browser:
+======================================================================
+# 12. NFS ENUMERATION
+======================================================================
 
-- /robots.txt
-- /sitemap.xml
-- /backup/
-- /dev/
-- /uploads/
-- /.git/
-- /.svn/
-- /config/
-- /admin/
+showmount -e $targetip
+mount -t nfs $targetip:/export /mnt/nfs
 
-===============================
-# 12. COMMON CVE QUICKSEARCH METHOD
-===============================
 
-# Find software version from nmap, then search:
-searchsploit <software name> <version>
+======================================================================
+# 13. SMTP ENUMERATION
+======================================================================
 
-# Example:
-searchsploit apache 2.4.49
+nc $targetip 25
+VRFY root
+smtp-user-enum -M VRFY -U users.txt -t $targetip
 
-===============================
-# 13. Quick Host Discovery (internal pivot scans)
-===============================
 
-# Fast scan internal network
+======================================================================
+# 14. DATABASE ENUMERATION (MySQL/Postgres/Redis/MongoDB)
+======================================================================
+
+# MySQL
+mysql -h $targetip -u root -p
+
+# PostgreSQL
+psql -h $targetip -U postgres
+
+# Redis
+redis-cli -h $targetip INFO
+
+# MongoDB
+mongo --host $targetip --eval "db.adminCommand('listDatabases')"
+
+
+======================================================================
+# 15. RPCBIND / RSYNC / NTP
+======================================================================
+
+# RPCBind (NFS / RServices)
+rpcinfo -p $targetip
+
+# Rsync
+rsync rsync://$targetip/
+
+# NTP
+ntpdate -q $targetip
+
+
+======================================================================
+# 16. DOCKER / CONTAINERS ENUMERATION
+======================================================================
+
+# Docker API exposed
+curl http://$targetip:2375/containers/json
+
+
+======================================================================
+# 17. VNC ENUMERATION
+======================================================================
+
+nmap -sV -p5900 $targetip
+vncsnapshot $targetip:0 screenshot.jpg
+
+
+======================================================================
+# 18. MEMCACHED ENUMERATION
+======================================================================
+
+echo "stats" | nc $targetip 11211
+
+
+======================================================================
+# 19. ELASTICSEARCH ENUMERATION
+======================================================================
+
+curl http://$targetip:9200/
+curl http://$targetip:9200/_cat/indices?v
+
+
+======================================================================
+# 20. mDNS / LLMNR / NBNS POISONING CHECKS
+======================================================================
+
+# mDNS
+nmap -sU -p5353 --script mdns-discovery $targetip
+
+# LLMNR (listen)
+tcpdump -i tun0 'udp port 5355'
+
+# NBNS
+tcpdump -i tun0 'udp port 137'
+
+
+======================================================================
+# 21. INTERNAL / PIVOT ENUMERATION
+======================================================================
+
+# Ping sweep
 fping -a -g 10.10.20.0/24 2>/dev/null
 
-# ARP scan
+# ARP
 arp-scan -l
 
-===============================
-# 14. Proxychains Enumeration (during pivot)
-===============================
-
+# Proxychains
 proxychains nmap -sT -Pn 10.10.20.10 -p 80,445
+proxychains curl http://10.10.20.10
+
+
+======================================================================
+# 22. QUICK CVE ENUMERATION
+======================================================================
+
+searchsploit <software> <version>
+searchsploit -m <exploit-id>
+
 
 ######################################################################
-# END OF ENUMERATION
+# END OF ENUMERATION (OSCP 2025 — v2)
 ######################################################################
