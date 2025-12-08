@@ -42,6 +42,9 @@ Why needed:
 - Tomcat Manager exploitation is common in OSCP-like HTB boxes.
 - WAR shells give instant RCE when deployed.
 
+
+https://medium.com/@mingihongkim/exploiting-java-portlets-with-a-malicious-war-file-to-gain-a-reverse-shell-2504909f71c1
+
 ======================================================================
 # 3. Node.js Reverse Shells (For Node-based RCE)
 ======================================================================
@@ -182,3 +185,4 @@ Why:
 ######################################################################
 # END
 ######################################################################
+
