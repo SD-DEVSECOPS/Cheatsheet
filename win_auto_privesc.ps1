@@ -7,9 +7,16 @@ function Invoke-AutoPrivEsc {
     Write-Host "[*] -----------------------------------------------" -ForegroundColor Cyan
     
     # 1. Privileges (The "Big Boys")
-    Write-Host "[*] Checking Token Privileges..." -ForegroundColor Cyan
+    Write-Host "[*] Checking Token Privileges & OS Version..." -ForegroundColor Cyan
     $privs = whoami /priv
     
+    # Build Check for HiveNightmare (SeriousSAM)
+    $version = [System.Environment]::OSVersion.Version
+    if ($version.Major -eq 10 -and $version.Build -ge 17763 -and $version.Build -le 19043) {
+        Write-Host "[!] OS BUILD ($($version.Build)) VULNERABLE TO HIVENIGHTMARE (SeriousSAM)!" -ForegroundColor Red
+        Write-Host "  [+] Action: Check for shadow copies: dir \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy*" -ForegroundColor Yellow
+    }
+
     $checkPrivs = @(
         @{Name="SeImpersonatePrivilege"; Desc="SYSTEM Shell -> Use GodPotato or PrintSpoofer"},
         @{Name="SeBackupPrivilege"; Desc="SAM/SYSTEM Dump via 'reg save'"},
