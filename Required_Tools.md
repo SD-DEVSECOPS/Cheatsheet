@@ -122,6 +122,7 @@
 - [ ] `GodPotato.exe` / `PrintSpoofer.exe`
 - [ ] `Rubeus.exe` (.NET 3.5 & 4.5)
 - [ ] `WinPEASany.exe` / `linpeas.sh`
+- [ ] `win_auto_privesc.ps1` (Enhanced Internal Script)
 - [ ] `SharpHound.exe`
 - [ ] `mimikatz.exe`
 - [ ] `SharpGPOAbuse.exe`
