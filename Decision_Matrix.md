@@ -95,7 +95,7 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 
 | If This Happens (Problem) | Do This (Fix) | Result |
 | :--- | :--- | :--- |
-| **Clock Skew Error** | `faketime -5m netexec ...` or `ntpdate [DC]` | Fixes Kerberos/AD Auth |
+| **Clock Skew Error** | `faketime -f -5m netexec ...` or `ntpdate [DC]` | Fixes Kerberos/AD Auth |
 | **Need Win Binary on Kali** | `x86_64-w64-mingw32-gcc ...` | Compile .c to .exe locally |
 | **Blocked on Internal IP** | `ligolo-ng` (if UDP 11601 works) or `chisel` | Access internal subnets |
 | **No "bash -i" possible** | `python3 -c 'import pty; pty.spawn("/bin/bash")'` | Stable TTY |
@@ -111,3 +111,4 @@ If you are stuck for more than 30 minutes, always check:
 3.  **Config Files**: `grep -ri "pass" /etc` or `findstr /s /i "password" *.xml`.
 
 **Results over theories. Execute and move.** 🚀
+
