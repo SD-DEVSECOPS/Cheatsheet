@@ -60,10 +60,11 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 
 ---
 
-### Pro Tip: The "Balkan" Triad of Despair
+### Pro Tip: The Triad of Despair
 If you are stuck for more than 30 minutes, always check:
 1.  **Internal Ports**: `netstat -ano` (Windows) or `ss -lntp` (Linux). Is there a local-only web app for Chisel?
 2.  **User Descriptions**: `ldapsearch` or `net user`. Are there passwords in the notes?
 3.  **Config Files**: `grep -ri "pass" /etc` or `findstr /s /i "password" *.xml`.
 
 **Results over theories. Execute and move.** 🚀
+
