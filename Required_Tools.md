@@ -75,9 +75,14 @@ This guide is your primary asset for ensuring your Kali environment is prepped a
 ### **Checklist**
 - [ ] **Chisel**: HTTP tunnels for port forwarding.
 - [ ] **Ligolo-ng**: TUN-based networking (allows transparent scanning through pivot).
+- [ ] **SSH**: Native port forwarding (Local, Remote, Dynamic).
 - [ ] **Socat**: Relaying connections from a compromised host to Kali.
 
 ### **Operational Tips**
+*   **SSH Tunneling Types**:
+    *   **Local (-L)**: Forward a remote port to your Kali: `ssh -L 8080:127.0.0.1:80 user@victim -N`
+    *   **Remote (-R)**: Forward a Kali port to the victim (e.g., for rev shells): `ssh -R 4444:127.0.0.1:4444 user@victim -N`
+    *   **Dynamic (-D)**: SOCKS Proxy for proxychains: `ssh -D 1080 user@victim -N`
 *   **Ligolo-ng (Setup)**:
     ```bash
     sudo ip tuntap add user [USER] mode tun ligolo
