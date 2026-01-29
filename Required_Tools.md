@@ -108,8 +108,8 @@
 
 ### **Scenario: Bypassing Clock Skew (Kerberos)**
 - **Tool**: `faketime`
-- **Command**: `faketime '2023-12-01 12:00:00' impacket-secretsdump ...`
-- **Relative Fix**: `faketime -5m netexec smb ...`
+- **Command**: `faketime -f '2023-12-01 12:00:00' impacket-secretsdump ...`
+- **Relative Fix**: `faketime -f -5m netexec smb ...`
 
 ### **Scenario: Cross-Compiling Exploits**
 - **Need Windows EXE?**: `x86_64-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32`
@@ -120,9 +120,10 @@
 - [ ] `nc.exe` (32/64)
 - [ ] `chisel` (Linux/Win)
 - [ ] `GodPotato.exe` / `PrintSpoofer.exe`
+- [ ] `HiveNightmare.exe` (SeriousSAM VSS Exploit)
 - [ ] `Rubeus.exe` (.NET 3.5 & 4.5)
 - [ ] `WinPEASany.exe` / `linpeas.sh`
-- [ ] `win_auto_privesc.ps1` (Enhanced Internal Script)
+- [ ] `win_auto_privesc.ps1` (Enhanced V2 - Registry/Networks/History)
 - [ ] `SharpHound.exe`
 - [ ] `mimikatz.exe`
 - [ ] `SharpGPOAbuse.exe`
