@@ -111,4 +111,3 @@ If you are stuck for more than 30 minutes, always check:
 3.  **Config Files**: `grep -ri "pass" /etc` or `findstr /s /i "password" *.xml`.
 
 **Results over theories. Execute and move.** 🚀
-
