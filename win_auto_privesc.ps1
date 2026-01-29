@@ -1,88 +1,109 @@
-# win_auto_privesc.ps1 - Tactical Windows PrivEsc Enumerator
+# win_auto_privesc.ps1 - The Definitive OSCP Tactical Enumerator
 # USAGE: powershell -ep bypass -c ". .\win_auto_privesc.ps1; Invoke-AutoPrivEsc"
+# COMBINES: Original V1 checks + V2 Research Improvements.
 
 function Invoke-AutoPrivEsc {
-    Write-Host "[*] Starting Windows Tactical PrivEsc Check" -ForegroundColor Cyan
-    Write-Host "[*] ---------------------------------------" -ForegroundColor Cyan
+    Write-Host "[*] Starting Windows MASTER Tactical PrivEsc Check" -ForegroundColor Cyan
+    Write-Host "[*] -----------------------------------------------" -ForegroundColor Cyan
     
     # 1. Privileges (The "Big Boys")
     Write-Host "[*] Checking Token Privileges..." -ForegroundColor Cyan
     $privs = whoami /priv
     
-    if ($privs -match "SeImpersonatePrivilege") {
-        Write-Host "[!] SeImpersonate ENABLED! -> Use GodPotato (Win2022) or PrintSpoofer (Old)" -ForegroundColor Red
-    }
-    if ($privs -match "SeBackupPrivilege") {
-        Write-Host "[!] SeBackup ENABLED! -> Dump SAM/SYSTEM via 'reg save'" -ForegroundColor Red
-    }
-    if ($privs -match "SeRestorePrivilege") {
-        Write-Host "[!] SeRestore ENABLED! -> Hijack Utilman/Sticky Keys" -ForegroundColor Red
-    }
-    if ($privs -match "SeManageVolumePrivilege") {
-        Write-Host "[!] SeManageVolume ENABLED! -> Use SeManageVolumeExploit (DLL Hijack)" -ForegroundColor Red
-    }
-    if ($privs -match "SeTakeOwnershipPrivilege") {
-        Write-Host "[!] SeTakeOwnership ENABLED! -> Take file ownership of system binaries" -ForegroundColor Red
+    $checkPrivs = @(
+        @{Name="SeImpersonatePrivilege"; Desc="SYSTEM Shell -> Use GodPotato or PrintSpoofer"},
+        @{Name="SeBackupPrivilege"; Desc="SAM/SYSTEM Dump via 'reg save'"},
+        @{Name="SeRestorePrivilege"; Desc="SYSTEM Shell via Utilman Hijack"},
+        @{Name="SeManageVolumePrivilege"; Desc="SYSTEM Shell via SeManageVolumeExploit (tzres.dll)"},
+        @{Name="SeTakeOwnershipPrivilege"; Desc="Persistence/Hijack via sethc.exe ownership"},
+        @{Name="SeLoadDriverPrivilege"; Desc="Kernel Exploit potential (Capcom.sys etc)"}
+    )
+
+    foreach ($p in $checkPrivs) {
+        if ($privs -match $p.Name) {
+            Write-Host "[!] $($p.Name) ENABLED!" -ForegroundColor Red
+            Write-Host "  [+] Action: $($p.Desc)" -ForegroundColor Yellow
+        }
     }
 
-    # 2. Services & Paths
-    Write-Host "`n[*] Checking Service Misconfigurations..." -ForegroundColor Cyan
+    # 2. Network - Local Only (Pivoting Leads)
+    Write-Host "`n[*] Checking Local Listening Ports (Pivoting/Tunneling Leads)..." -ForegroundColor Cyan
+    netstat -ano | Select-String "LISTENING" | Select-String "127.0.0.1|0.0.0.0" | ForEach-Object {
+        Write-Host "  [+] Port Found: $($_.ToString().Trim())" -ForegroundColor Yellow
+    }
+
+    # 3. Services & Registry Vulnerabilities
+    Write-Host "`n[*] Checking Service & Registry Misconfigurations..." -ForegroundColor Cyan
     
     # Unquoted Service Paths
     $unquoted = Get-WmiObject win32_service | Where-Object {$_.PathName -like "* *" -and $_.PathName -notlike '"*'}
     if ($unquoted) {
         Write-Host "[!] UNQUOTED SERVICE PATHS FOUND!" -ForegroundColor Red
-        $unquoted | Select-Object Name, PathName | ForEach-Object { Write-Host "  [+] $($_.Name): $($_.PathName)" -ForegroundColor Yellow }
+        foreach($s in $unquoted) { Write-Host "  [+] $($s.Name): $($s.PathName)" -ForegroundColor Yellow }
+    }
+
+    # Modifiable Service Registry Keys (ImagePath Hijack)
+    $services = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\*" | Select-Object PSChildName, ImagePath
+    foreach ($s in $services) {
+        $path = "HKLM:\SYSTEM\CurrentControlSet\Services\$($s.PSChildName)"
+        try {
+            $acl = Get-Acl $path -ErrorAction SilentlyContinue
+            if ($acl.AccessToString -match "BUILTIN\\Users.*(Write|FullControl|Modify|ChangePermissions)") {
+                Write-Host "[!] MODIFIABLE REGISTRY KEY: $($s.PSChildName)" -ForegroundColor Red
+                Write-Host "  [+] Action: Hijack 'ImagePath' for SYSTEM shell" -ForegroundColor Yellow
+            }
+        } catch {}
+    }
+
+    # Weak Service Permissions (sc.exe check)
+    Get-Service | Select-Object -First 20 | ForEach-Object {
+        $n = $_.Name
+        $sd = sc.exe sdshow $n 2>$null
+        if ($sd -match "WD.*RP") { Write-Host "[!] WEAK SERVICE PERMS: $n" -ForegroundColor Red }
     }
 
     # AlwaysInstallElevated
     $reg1 = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name "AlwaysInstallElevated" -ErrorAction SilentlyContinue
     $reg2 = Get-ItemProperty -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name "AlwaysInstallElevated" -ErrorAction SilentlyContinue
     if ($reg1.AlwaysInstallElevated -eq 1 -and $reg2.AlwaysInstallElevated -eq 1) {
-        Write-Host "[!] ALWAYSINSTALLELEVATED ENABLED! -> MSI Exploit Possible" -ForegroundColor Red
+        Write-Host "[!] ALWAYSINSTALLELEVATED ENABLED! -> Use msfvenom MSI" -ForegroundColor Red
     }
 
-    # 3. Credential Hunting (Registry & Files)
-    Write-Host "`n[*] Hunting for Stored Credentials..." -ForegroundColor Cyan
+    # 4. Credential & History Hunting
+    Write-Host "`n[*] Hunting for Credentials & Secrets..." -ForegroundColor Cyan
     
-    # Check AutoLogon
+    # PowerShell History
+    $historyPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
+    if (Test-Path $historyPath) {
+        Write-Host "[!] POWERSHELL HISTORY FOUND!" -ForegroundColor Red
+        Get-Content $historyPath -Tail 10 | ForEach-Object { Write-Host "  > $_" -ForegroundColor Gray }
+    }
+
+    # Stored Credentials
+    if (cmdkey /list -match "Target") { Write-Host "[!] STORED CREDENTIALS IN CMDKEY!" -ForegroundColor Red }
     $autologon = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -ErrorAction SilentlyContinue
-    if ($autologon.DefaultPassword) {
-        Write-Host "[!] AUTO-LOGON CREDENTIALS FOUND!" -ForegroundColor Red
-        Write-Host "  [+] User: $($autologon.DefaultUserName) / Pass: $($autologon.DefaultPassword)" -ForegroundColor Yellow
+    if ($autologon.DefaultPassword) { Write-Host "[!] AUTO-LOGON: $($autologon.DefaultUserName):$($autologon.DefaultPassword)" -ForegroundColor Red }
+
+    # Sensitive Files (Partial System Crawl)
+    $files = @("unattend.xml", "web.config", "sysprep.xml", "App.config")
+    foreach ($f in $files) {
+        $res = Get-ChildItem -Path C:\ -Include $f -Recurse -ErrorAction SilentlyContinue | Select-Object -First 2
+        if ($res) { Write-Host "[!] SENSITIVE FILE: $($res.FullName)" -ForegroundColor Red }
     }
 
-    # Check cmdkey
-    $cmdkey = cmdkey /list
-    if ($cmdkey -match "Target") {
-        Write-Host "[!] STORED CREDENTIALS IN CMDKEY FOUND!" -ForegroundColor Red
-        Write-Host "  [+] Try running: runas /savecred /user:[USER] cmd.exe" -ForegroundColor Yellow
+    # 5. Tasks & Scheduled Events
+    Write-Host "`n[*] Checking Scheduled Tasks..." -ForegroundColor Cyan
+    $tasks = Get-ScheduledTask | Where-Object {$_.Principal.UserId -eq "SYSTEM" -and $_.State -eq "Ready"}
+    if ($tasks) {
+        Write-Host "[!] SYSTEM TASKS FOUND (Check if you can modify binaries/XMLs)" -ForegroundColor Red
+        $tasks | Select-Object TaskName -First 5 | ForEach-Object { Write-Host "  [+] Task: $($_.TaskName)" -ForegroundColor Yellow }
     }
 
-    # Sensitive Files
-    $sensitiveFiles = @("unattend.xml", "web.config", "sysprep.inf", "sysprep.xml", "App.config")
-    foreach ($file in $sensitiveFiles) {
-        $found = Get-ChildItem -Path C:\ -Include $file -Recurse -ErrorAction SilentlyContinue | Select-Object -First 3
-        if ($found) {
-            Write-Host "[!] SENSITIVE FILE FOUND: $file" -ForegroundColor Red
-            $found | ForEach-Object { Write-Host "  [+] Path: $($_.FullName)" -ForegroundColor Yellow }
-        }
-    }
+    # 6. AD/LAPS Context
+    if (Test-Path "C:\Program Files\LAPS\CSE") { Write-Host "[!] LAPS INSTALLED! -> Search for ms-Mcs-AdmPwd" -ForegroundColor Yellow }
 
-    # 4. Active Directory Context (LAPS & GMSA)
-    Write-Host "`n[*] Checking AD Components..." -ForegroundColor Cyan
-    
-    # LAPS Check
-    if (Test-Path "C:\Program Files\LAPS\CSE") {
-        Write-Host "[!] LAPS IS INSTALLED! -> Check for read permissions on ms-Mcs-AdmPwd" -ForegroundColor Yellow
-    }
-
-    # GPO Access
-    Write-Host "[*] Check if you have GenericWrite on GPOs via BloodHound/NetExec" -ForegroundColor Gray
-
-    Write-Host "`n[*] ---------------------------------------" -ForegroundColor Cyan
-    Write-Host "[*] Enumeration Complete!" -ForegroundColor Green
+    Write-Host "`n[*] -----------------------------------------------" -ForegroundColor Cyan
+    Write-Host "[*] MASTER CHECK COMPLETE! Results over theories." -ForegroundColor Green
 }
 
-# Run it
 Invoke-AutoPrivEsc
