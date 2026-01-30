@@ -19,6 +19,8 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **Writable SMB Share** | Upload `.lnk` file via `ntlm_theft.py` | Force NTLM authentication (Responder) |
 | **Web Service (Anonymous)** | `cadaver http://10.10.10.10` | Check for WebDAV PUT/MOVE permissions |
 | **CMS Admin Access** | Upload PHP shell via Plugin/Extension/Theme | RCE on web server |
+| **Nagios XI (Title/Favicon)**| Try `nagiosadmin:admin` or `nagiosadmin:nagios` | Admin access for RCE |
+| **Nagios XI Admin Access** | Upload ELF shell as plugin to `monitoringplugins.php` | RCE as `nagios` or `root` |
 | **LFI (No Wrappers)** | Check `/var/log/apache2/access.log` (Poison UA) | LFI-to-RCE via Log Poisoning |
 | **Port 1433 Cracked** | `mssqlclient ...` then check `IMPERSONATE` rights | Escalation within SQL to Admin/System |
 
