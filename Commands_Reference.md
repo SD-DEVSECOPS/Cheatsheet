@@ -36,6 +36,10 @@ Always try multiple scan speeds and script combinations.
   ```bash
   ffuf -u http://[DOMAIN] -H "Host: FUZZ.[DOMAIN]" -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac
   ```
+  - **Subdomain Fuzzing:**
+  ```bash
+  ffuf -u http://FUZZ.192.168.171.136/ -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac
+  ```
 - **Extension Brute Force:**
   ```bash
   ffuf -u http://10.10.10.10/FUZZ -w list.txt -e .php,.txt,.bak,.old
@@ -600,3 +604,4 @@ Include multiple variations for different OS targets and filtering environments.
 
 ---
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
+
