@@ -68,11 +68,9 @@ Try null sessions and guest accounts first.
   rpcclient -U "" -N 10.10.10.10 -c "enumdomusers"
   ```
   smbmap -H 10.10.10.10
-  ```
-  ```
-  proxychains smbmap -H 10.10.123.140 -u web_svc -p Diamond1 -d oscp.exam
-  ```
-  ```
+
+  proxychains smbmap -H 10.10.10.10 -u user -p password -d domain
+ 
   netexec smb 10.10.10.10 -u user -p password --shares
 ```
 - **NTLM Hash Theft (Writable Share)**:
@@ -615,5 +613,6 @@ Include multiple variations for different OS targets and filtering environments.
 
 ---
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
+
 
 
