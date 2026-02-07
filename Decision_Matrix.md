@@ -113,5 +113,6 @@ If you are stuck for more than 30 minutes, always check:
 1.  **Internal Ports**: `netstat -ano` (Windows) or `ss -lntp` (Linux). Is there a local-only web app for Chisel?
 2.  **User Descriptions**: `ldapsearch` or `net user`. Are there passwords in the notes?
 3.  **Config Files**: `grep -ri "pass" /etc` or `findstr /s /i "password" *.xml`.
+4.  **Old Backups**: Look for `C:\windows.old`. If found, dump `SAM/SYSTEM` for old local hashes.
 
 **Results over theories. Execute and move.** 🚀
