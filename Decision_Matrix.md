@@ -23,6 +23,8 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **Nagios XI Admin Access** | Upload ELF shell as plugin to `monitoringplugins.php` | RCE as `nagios` or `root` |
 | **LFI (No Wrappers)** | Check `/var/log/apache2/access.log` (Poison UA) | LFI-to-RCE via Log Poisoning |
 | **Port 1433 Cracked** | `mssqlclient ...` then check `IMPERSONATE` rights | Escalation within SQL to Admin/System |
+| **MySQL (root access)** | `SELECT INTO OUTFILE ...` | Write PHP shell for RCE |
+| **Windows AutoLogon** | `reg query "HKLM\...\Winlogon" /v DefaultPassword` | Cleartext credentials |
 
 ---
 
